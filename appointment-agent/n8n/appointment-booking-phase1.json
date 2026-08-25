@@ -1,0 +1,835 @@
+{
+  "name": "AI Appointment Booking Agent - Phase 1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "43937c01-d99d-458e-b880-3c9b3be80c27",
+      "name": "WhatsApp Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Meta Cloud API envelope: entry[].changes[].value.{messages[], statuses[]}\nconst body = $input.first().json.body ?? $input.first().json;\nconst value = body.entry?.[0]?.changes?.[0]?.value;\nconst message = value?.messages?.[0];\n\n// Status callbacks (sent/delivered/read) also hit this webhook - ignore them here.\nif (!message) {\n  return [];\n}\n\nconst phone = message.from; // e.g. '919876543210', no '+'\nconst text = message.type === 'text' ? message.text.body\n           : message.type === 'button' ? message.button.text\n           : message.type === 'interactive' ? (message.interactive?.button_reply?.title || message.interactive?.list_reply?.title)\n           : '';\nconst messageId = message.id; // used as the idempotency key downstream\nconst contactName = value.contacts?.[0]?.profile?.name;\n\nreturn [{ json: {\n  clinicId: 1,\n  whatsappNumber: '+' + phone,\n  messageText: text,\n  waMessageId: messageId,\n  contactName\n} }];"
+      },
+      "id": "cf347041-d249-4b8e-b62f-d7eeaa3be751",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/clinics/{{$json.clinicId}}/sessions/active",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "whatsappNumber",
+              "value": "={{$json.whatsappNumber}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d9a991fb-1c86-43b5-9a9b-62325f55e56d",
+      "name": "Get Active Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/clinics/{{$('Extract Message').item.json.clinicId}}/services",
+        "options": {}
+      },
+      "id": "13c0342f-a3ea-4f87-bc5a-d553e8abe173",
+      "name": "Get Services",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/clinics/{{$('Extract Message').item.json.clinicId}}/doctors",
+        "options": {}
+      },
+      "id": "b70d5bc0-1e27-4747-8165-b3e17d8509e1",
+      "name": "Get Doctors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "numberInputs": 3
+      },
+      "id": "ec149bfc-5381-41b7-820c-95ef6d2e7cfe",
+      "name": "Merge Context",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        660,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine everything the AI needs: current session state, the raw\n// message, and the clinic's real services/doctors (never let the AI\n// invent a service or doctor name - doc section 19 rule 1).\nconst session = $('Get Active Session').first().json;\nconst services = $('Get Services').first().json;\nconst doctors = $('Get Doctors').first().json;\nconst extracted = $('Extract Message').first().json;\n\nconst systemPrompt = `You are a WhatsApp appointment booking assistant for a clinic.\n\nSTRICT RULES (never break these):\n1. Never invent availability or say a time is free unless it came from a CHECK_AVAILABILITY tool result you were given.\n2. Never say an appointment is booked/confirmed. Only the backend confirms bookings.\n3. Only reference services and doctors from the provided lists - never invent one.\n4. Collect info conversationally, one or two questions at a time. Don't ask for something already present in currentSession.\n5. If the patient's message is ambiguous (e.g. 'evening'), ask them to confirm a specific time rather than guessing.\n\nGiven the conversation state below, decide the next action and reply text.\nRespond with ONLY valid JSON, no markdown fences, no preamble, in this exact shape:\n{\n  \\\"reply_to_patient\\\": string,\n  \\\"session_updates\\\": { \\\"intent\\\"?: string, \\\"serviceId\\\"?: number, \\\"doctorId\\\"?: number, \\\"appointmentDate\\\"?: \\\"YYYY-MM-DD\\\", \\\"selectedStartTime\\\"?: \\\"HH:mm\\\", \\\"patientName\\\"?: string, \\\"state\\\": string },\n  \\\"action\\\": \\\"ASK_MORE_INFO\\\" | \\\"CHECK_AVAILABILITY\\\" | \\\"CONFIRM_BOOKING\\\" | \\\"NONE\\\"\n}\n\nValid state values: STARTED, COLLECTING_SERVICE, COLLECTING_DOCTOR, COLLECTING_DATE, SHOWING_SLOTS, WAITING_FOR_SLOT, COLLECTING_NAME, CONFIRMING, BOOKED.\nUse action=CHECK_AVAILABILITY once service+doctor+date are all known and state should move to SHOWING_SLOTS.\nUse action=CONFIRM_BOOKING only after the patient has explicitly confirmed (e.g. replied 'yes') to a summary you already showed them, with state=CONFIRMING.`;\n\nconst userPrompt = JSON.stringify({\n  currentSession: session,\n  patientMessage: extracted.messageText,\n  availableServices: services,\n  availableDoctors: doctors\n}, null, 2);\n\nreturn [{ json: { systemPrompt, userPrompt, session, extracted } }];"
+      },
+      "id": "a212eef4-8e32-478d-a810-f95b4d8c844e",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{$env.ANTHROPIC_API_KEY}}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: 'claude-sonnet-4-6',\n  max_tokens: 600,\n  system: $json.systemPrompt,\n  messages: [{ role: 'user', content: $json.userPrompt }]\n}) }}",
+        "options": {}
+      },
+      "id": "d765db23-d55b-4073-a02d-f171fd34a1ca",
+      "name": "Call Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.content?.[0]?.text || '{}';\nlet parsed;\ntry {\n  parsed = JSON.parse(raw);\n} catch (e) {\n  parsed = { reply_to_patient: \"Sorry, could you rephrase that?\", session_updates: { state: 'STARTED' }, action: 'NONE' };\n}\nconst session = $('Build AI Prompt').first().json.session;\nconst extracted = $('Build AI Prompt').first().json.extracted;\nreturn [{ json: { ...parsed, sessionId: session.sessionId, clinicId: extracted.clinicId, whatsappNumber: extracted.whatsappNumber } }];"
+      },
+      "id": "cde82055-9fbc-4575-afa3-f0a1df08f45e",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/sessions/{{$json.sessionId}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.session_updates) }}",
+        "options": {}
+      },
+      "id": "844f4325-d6f0-42a7-a0db-7b10c5d9a729",
+      "name": "Update Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "output": "={{$('Parse AI Response').item.json.action}}",
+        "rules": {
+          "values": [
+            {
+              "outputKey": "CHECK_AVAILABILITY"
+            },
+            {
+              "outputKey": "CONFIRM_BOOKING"
+            },
+            {
+              "outputKey": "ASK_MORE_INFO"
+            },
+            {
+              "outputKey": "NONE"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      },
+      "id": "0c49d64c-3c00-4dd7-98e8-7d588e6a29d0",
+      "name": "Route On Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1760,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/clinics/{{$('Parse AI Response').item.json.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Parse AI Response').item.json.session_updates.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Parse AI Response').item.json.session_updates.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Parse AI Response').item.json.session_updates.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b6c0c16e-6655-4265-911f-5908d4dc9ffb",
+      "name": "Get Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// NEVER let the AI freehand this list - doc section 19 rule 1.\nconst slots = $json.slots || [];\nconst date = $json.date;\nlet text;\nif (slots.length === 0) {\n  text = `No slots are available on ${date}. Could you try another date?`;\n} else {\n  text = `Available on ${date}: ${slots.join(', ')}. Which time would you prefer?`;\n}\nreturn [{ json: { replyText: text, whatsappNumber: $('Parse AI Response').first().json.whatsappNumber } }];"
+      },
+      "id": "b2a641ca-e1d0-4e2b-a45d-7d65620a3856",
+      "name": "Format Slots Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  clinicId: $('Parse AI Response').item.json.clinicId,\n  doctorId: $('Build AI Prompt').item.json.session.doctorId,\n  serviceId: $('Build AI Prompt').item.json.session.serviceId,\n  patientName: $('Build AI Prompt').item.json.session.patientName,\n  whatsappNumber: $('Parse AI Response').item.json.whatsappNumber,\n  appointmentDate: $('Build AI Prompt').item.json.session.appointmentDate,\n  startTime: $('Build AI Prompt').item.json.session.selectedStartTime,\n  idempotencyKey: $('Extract Message').item.json.whatsappMessageId || $execution.id,\n  sessionId: $('Parse AI Response').item.json.sessionId\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "6c536acd-6334-4fe6-8234-ad0a72099c52",
+      "name": "Create Appointment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$statusCode}}",
+              "rightValue": 201,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "9527dd6f-8df5-492c-a363-a62d9348376d",
+      "name": "Booking Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $json;\nconst text = `Your appointment is confirmed!\\n\\nAppointment ID: ${a.appointmentId}\\nDoctor: ${a.doctorName}\\nService: ${a.serviceName}\\nDate: ${a.appointmentDate}\\nTime: ${a.startTime}`;\nreturn [{ json: { replyText: text, whatsappNumber: $('Parse AI Response').first().json.whatsappNumber } }];"
+      },
+      "id": "68b61825-8c54-4d27-9fac-100d7a85c432",
+      "name": "Format Confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.SPRING_BOOT_BASE_URL || 'http://localhost:8080'}}/api/clinics/{{$('Parse AI Response').item.json.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Build AI Prompt').item.json.session.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Build AI Prompt').item.json.session.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Build AI Prompt').item.json.session.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e472628e-2789-4f21-9012-9a5becfe56cd",
+      "name": "Get Fresh Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// The doc's exact scenario from section 15: slot was taken between\n// showing it and confirming. Never say 'booked' here - offer alternatives.\nconst slots = $json.slots || [];\nconst text = slots.length\n  ? `Sorry, that time was just booked by someone else. Other options: ${slots.join(', ')}. Which would you like?`\n  : `Sorry, that time was just booked and there are no other slots that day. Could you try a different date?`;\nreturn [{ json: { replyText: text, whatsappNumber: $('Parse AI Response').first().json.whatsappNumber } }];"
+      },
+      "id": "d85ea147-8812-4689-b78a-f0515b7526c2",
+      "name": "Format Slot Taken Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2640,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "replyText",
+              "type": "string",
+              "value": "={{$('Parse AI Response').item.json.reply_to_patient}}"
+            },
+            {
+              "name": "whatsappNumber",
+              "type": "string",
+              "value": "={{$('Parse AI Response').item.json.whatsappNumber}}"
+            }
+          ]
+        }
+      },
+      "id": "877e4ef5-33a3-4fdc-90c6-79bb36b971ba",
+      "name": "Use AI Reply As-Is",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://graph.facebook.com/v21.0/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  messaging_product: 'whatsapp',\n  to: $json.whatsappNumber.replace('+',''),\n  type: 'text',\n  text: { body: $json.replyText }\n}) }}",
+        "options": {}
+      },
+      "id": "0e9eb401-9afa-4445-87d7-5f9da7c2649e",
+      "name": "Send WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.query['hub.mode']}}",
+              "rightValue": "subscribe",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "verify-check-id",
+      "name": "Is Verification Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        220,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.query['hub.challenge']}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "verify-response-id",
+      "name": "Respond With Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        440,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "EVENT_RECEIVED",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ack-response-id",
+      "name": "Ack Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-inbound",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "verify-webhook-node-0001",
+      "name": "Meta Verify Handshake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{$json.query['hub.challenge']}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "verify-respond-node-0001",
+      "name": "Respond With Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        220,
+        -220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"received\"} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "ack-respond-node-0001",
+      "name": "Ack Meta Immediately",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        220,
+        -100
+      ]
+    }
+  ],
+  "connections": {
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Get Active Session",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Services",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Doctors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Session": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Services": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Doctors": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Context": {
+      "main": [
+        [
+          {
+            "node": "Build AI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Update Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session": {
+      "main": [
+        [
+          {
+            "node": "Route On Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route On Action": {
+      "main": [
+        [
+          {
+            "node": "Get Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use AI Reply As-Is",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Use AI Reply As-Is",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability": {
+      "main": [
+        [
+          {
+            "node": "Format Slots Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment": {
+      "main": [
+        [
+          {
+            "node": "Booking Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Format Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Fresh Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Fresh Availability": {
+      "main": [
+        [
+          {
+            "node": "Format Slot Taken Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slots Reply": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Slot Taken Reply": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use AI Reply As-Is": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Inbound": {
+      "main": [
+        [
+          {
+            "node": "Ack Meta Immediately",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Verification Request?": {
+      "main": [
+        [
+          {
+            "node": "Respond With Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ack Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Verify Handshake": {
+      "main": [
+        [
+          {
+            "node": "Respond With Challenge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
