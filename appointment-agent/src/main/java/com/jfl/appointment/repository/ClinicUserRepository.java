@@ -36,4 +36,12 @@ public interface ClinicUserRepository
     List<ClinicUser> findByClientId(@Param("clientId") Long clientId);
 
     Optional<ClinicUser> findByUser_Id(Long userId);
+
+    @Query("""
+                SELECT cu
+                FROM ClinicUser cu
+                JOIN FETCH cu.clinic
+                WHERE cu.user.id = :userId
+            """)
+    Optional<ClinicUser> findByUserIdWithClinic(@Param("userId") Long userId);
 }

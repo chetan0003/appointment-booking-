@@ -97,6 +97,12 @@ public class SecurityConfig {
                                 "/api/n8n/**"
                         ).permitAll()
 
+                        .requestMatchers("/api/users/**")
+                        .hasAnyRole(
+                                "SUPER_ADMIN",
+                                "CLINIC_ADMIN",
+                                "STAFF"
+                        )
                         // Super admin
                         .requestMatchers(
                                 "/api/admin/**"

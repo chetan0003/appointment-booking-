@@ -4,20 +4,15 @@ package com.jfl.appointment.dashboard.controller;
 import com.jfl.appointment.dashboard.dto.ClinicUserDto;
 import com.jfl.appointment.dashboard.dto.CreateUserRequest;
 import com.jfl.appointment.dashboard.dto.UserResponse;
-import com.jfl.appointment.entity.AppUser;
 import com.jfl.appointment.dashboard.service.UserManagementService;
-import com.jfl.appointment.repository.AppUserRepository;
-import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.entity.AppUser;
 import jakarta.validation.Valid;
-
 import lombok.RequiredArgsConstructor;
-
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Optional;
 
 @Slf4j
 @RestController
@@ -47,10 +42,5 @@ public class UserManagementController {
         return userManagementService.getClinicUsersByClientId(clinicId);
     }
 
-    @GetMapping
-    public UserResponse getUserDetail() {
-        log.info("user id");
-        return userManagementService.getUserDetail();
-    }
 
 }
