@@ -1,13 +1,13 @@
 package com.jfl.appointment.dashboard.controller;
 
+import com.jfl.appointment.dashboard.dto.CreateServiceRequest;
+import com.jfl.appointment.entity.Clinic;
 import com.jfl.appointment.entity.ServiceOffering;
 import com.jfl.appointment.n8n.dto.ServiceDto;
+import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ServiceOfferingRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -17,6 +17,28 @@ import java.util.List;
 public class ServiceDashboardController {
 
     private final ServiceOfferingRepository serviceRepository;
+    private final ClinicRepository clinicRepository;
+
+    @PostMapping
+    public ServiceDto createService(
+            @PathVariable Long clinicId,
+            @RequestBody CreateServiceRequest request) {
+
+        Clinic clinic = clinicRepository.findById(clinicId)
+                .orElseThrow(() ->
+                        new RuntimeException("Clinic not found: " + clinicId));
+
+        ServiceOffering service = new ServiceOffering();
+        service.setClinic(clinic);
+        service.setName(request.name());
+        service.setDurationMinutes(request.durationMinutes());
+        service.setPrice(request.price());
+        service.setActive(true);
+
+        ServiceOffering savedService = serviceRepository.save(service);
+
+        return toDto(savedService);
+    }
 
     @GetMapping
     public List<ServiceDto> getServices(@PathVariable Long clinicId) {
