@@ -31,10 +31,10 @@ public class DoctorController {
         log.info("Get Doctors : clinicId -> {} , ServiceId -> {}", clinicId, serviceId);
         if (StringUtils.isEmpty(serviceId))
             return doctorRepository.findByClinicIdAndActiveTrue(clinicId).stream()
-                    .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization()))
+                    .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization(),d.isActive()))
                     .toList();
         return doctorRepository.findDoctorsByClinicAndService(clinicId, serviceId).stream()
-                .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization()))
+                .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization(),d.isActive()))
                 .toList();
 
     }
