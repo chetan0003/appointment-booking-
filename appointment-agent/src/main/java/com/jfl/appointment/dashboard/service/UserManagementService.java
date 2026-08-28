@@ -143,30 +143,35 @@ public class UserManagementService {
     @Transactional(readOnly = true)
     public UserResponse getUserDetail(String userName) {
         AppUser appUser = appUserRepository.findByUsername(userName).get();
-        if(appUser.getRoles().stream()
+        if (appUser.getRoles().stream()
                 .anyMatch(role -> RoleName.SUPER_ADMIN.equals(role.getName()))) {
             List<Clinic> all = clinicRepository.findAll();
-            return toDto(appUser,all);
+            return toDto(appUser, all, null);
         }
+        Long doctorId = null;
         Optional<ClinicUser> byUserId = clinicUserRepository.findByUserIdWithClinic(appUser.getId());
+        if (appUser.getRoles().stream()
+                .anyMatch(role -> RoleName.DOCTOR.equals(role.getName()))) {
+            doctorId = byUserId.get().getDoctor().getId();
+        }
         Clinic clinic = byUserId.get().getClinic();
-        return toDto(appUser, Arrays.asList(clinic));
+        return toDto(appUser, Arrays.asList(clinic), doctorId);
     }
 
     private ClinicUserDto toDto(ClinicUser s) {
         return new ClinicUserDto(s.getId(), s.getUser().getFirstName(), s.getUser().getEmail(), s.getUser().getRoles().stream().findFirst().get().getName().name(), s.getUser().isEnabled(), "Today");
     }
 
-    private UserResponse toDto(AppUser appUser,List<Clinic> clinicList) {
-        return new UserResponse(appUser.getId(),appUser.getUsername(),appUser.getEmail(),
+    private UserResponse toDto(AppUser appUser, List<Clinic> clinicList, Long doctorId) {
+        return new UserResponse(appUser.getId(), appUser.getUsername(), appUser.getEmail(),
                 appUser.getFirstName(), appUser.getLastName(),
-                appUser.getRoles().stream().findFirst().get().getName().name(),appUser.getPhone(),appUser.isEnabled(),setClinicResponse(clinicList));
+                appUser.getRoles().stream().findFirst().get().getName().name(), appUser.getPhone(), appUser.isEnabled(), doctorId, setClinicResponse(clinicList));
     }
 
     private List<ClinicResponse> setClinicResponse(List<Clinic> clinicList) {
         return clinicList.stream()
-                .map(o-> {
-                    return new ClinicResponse(o.getId(),o.getName(),o.getWhatsappNumber(),o.getTimezone(),o.isActive(),o.getCreatedAt());
+                .map(o -> {
+                    return new ClinicResponse(o.getId(), o.getName(), o.getWhatsappNumber(), o.getTimezone(), o.isActive(), o.getCreatedAt());
                 }).toList();
     }
 }

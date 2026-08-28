@@ -48,12 +48,14 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             where a.clinic.id = :clinicId
               and (:serviceId is null or a.service.id = :serviceId)
               and (:doctorId is null or a.doctor.id = :doctorId)
+              and (:status is null or a.status in :status)
             order by a.appointmentDate asc, a.startTime asc
             """)
     List<Appointment> findForDashboard(
             @Param("clinicId") Long clinicId,
             @Param("serviceId") Long serviceId,
-            @Param("doctorId") Long doctorId
+            @Param("doctorId") Long doctorId,
+            @Param("status") AppointmentStatus status
     );
 
     @Query("""

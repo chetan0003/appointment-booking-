@@ -101,6 +101,7 @@ public class SecurityConfig {
                         .hasAnyRole(
                                 "SUPER_ADMIN",
                                 "CLINIC_ADMIN",
+                                "DOCTOR",
                                 "STAFF"
                         )
                         // Super admin

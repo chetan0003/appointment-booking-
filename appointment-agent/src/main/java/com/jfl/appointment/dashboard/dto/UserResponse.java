@@ -13,6 +13,8 @@ public record UserResponse(
         String role,
         String phone,
         boolean enabled,
+
+        Long doctorId,
         List<ClinicResponse> clinic
 
 ) {}

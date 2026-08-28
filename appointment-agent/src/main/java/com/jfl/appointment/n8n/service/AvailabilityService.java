@@ -8,6 +8,7 @@ import com.jfl.appointment.repository.ClinicWorkingHoursRepository;
 import com.jfl.appointment.repository.DoctorRepository;
 import com.jfl.appointment.repository.ServiceOfferingRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
  * authoritative check happens transactionally in DashboardAppointmentService right
  * before the row is inserted, so a slot returned here is never trusted blindly.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AvailabilityService {
@@ -42,6 +44,7 @@ public class AvailabilityService {
 
     @Transactional(readOnly = true)
     public AvailabilityResponse getAvailability(Long clinicId, Long doctorId, Long serviceId, LocalDate date) {
+
         Doctor doctor = doctorRepository.findById(doctorId)
                 .filter(d -> d.getClinic().getId().equals(clinicId))
                 .orElseThrow(() -> new NotFoundException("Doctor not found: " + doctorId));

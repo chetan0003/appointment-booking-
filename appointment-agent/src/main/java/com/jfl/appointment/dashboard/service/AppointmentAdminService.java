@@ -53,7 +53,8 @@ public class AppointmentAdminService {
                 .findForDashboard(
                         clinicId,
                         serviceId,
-                        doctorId
+                        doctorId,
+                        status
                 )
                 .stream()
                 .map(this::toDto)
@@ -135,5 +136,38 @@ public class AppointmentAdminService {
                 a.getPatient().getName(),
                 a.getPatient().getWhatsappNumber()
         );
+    }
+
+    public void validateStatusTransition(
+            AppointmentStatus current,
+            AppointmentStatus next) {
+
+        boolean valid = switch (current) {
+
+            case CONFIRMED ->
+                    next == AppointmentStatus.CHECKED_IN
+                            || next == AppointmentStatus.CANCELLED
+                            || next == AppointmentStatus.NO_SHOW;
+
+            case CHECKED_IN ->
+                    next == AppointmentStatus.WAITING
+                            || next == AppointmentStatus.CANCELLED;
+
+            case WAITING ->
+                    next == AppointmentStatus.IN_PROGRESS;
+
+            case IN_PROGRESS ->
+                    next == AppointmentStatus.COMPLETED;
+
+            case COMPLETED, CANCELLED, NO_SHOW ->
+                    false;
+        };
+
+        if (!valid) {
+            throw new IllegalStateException(
+                    "Invalid appointment status transition: "
+                            + current + " -> " + next
+            );
+        }
     }
 }
