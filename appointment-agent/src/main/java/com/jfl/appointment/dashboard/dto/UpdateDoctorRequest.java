@@ -1,10 +1,8 @@
 package com.jfl.appointment.dashboard.dto;
 
-
-
-public record CreateDoctorRequest(
+public record UpdateDoctorRequest(
         String name,
         String specialization,
-        Long serviceId
-) {
-}
+        Long serviceId,
+        boolean active
+) {}

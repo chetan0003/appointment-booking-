@@ -6,10 +6,11 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface DoctorRepository extends JpaRepository<Doctor, Long> {
     List<Doctor> findByClinicIdAndActiveTrue(Long clinicId);
-
+    Optional<Doctor> findByIdAndClinicId(Long doctorId, Long clinicId);
     // Now genuinely filters via the doctor_service join, instead of the
     // caller's serviceId param being silently ignored.
 //    List<Doctor> findByClinicIdAndActiveTrueAndServices_Id(Long clinicId, Long serviceId);

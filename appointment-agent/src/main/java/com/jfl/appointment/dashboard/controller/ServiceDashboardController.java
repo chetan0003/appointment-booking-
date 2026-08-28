@@ -7,6 +7,7 @@ import com.jfl.appointment.n8n.dto.ServiceDto;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ServiceOfferingRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +21,7 @@ public class ServiceDashboardController {
     private final ClinicRepository clinicRepository;
 
     @PostMapping
+    @CacheEvict(value = {"clinicDoctors", "clinicServices"}, allEntries = true)
     public ServiceDto createService(
             @PathVariable Long clinicId,
             @RequestBody CreateServiceRequest request) {
