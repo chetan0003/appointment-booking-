@@ -1,4 +1,4 @@
-package com.jfl.appointment.dashboard.controller;
+package com.jfl.appointment.dashboard.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

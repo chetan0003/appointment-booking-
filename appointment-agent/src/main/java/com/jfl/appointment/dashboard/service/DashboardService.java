@@ -1,9 +1,8 @@
 package com.jfl.appointment.dashboard.service;
 
 
-import com.jfl.appointment.dashboard.dto.ApiErrorResponse;
+import com.jfl.appointment.dashboard.dto.ApiDashboardResponse;
 import com.jfl.appointment.dashboard.dto.AppointmentDashboardItem;
-import com.jfl.appointment.dashboard.service.ClinicAccessService;
 import com.jfl.appointment.entity.Appointment;
 import com.jfl.appointment.entity.ClinicUser;
 import com.jfl.appointment.repository.AppointmentRepository;
@@ -28,7 +27,7 @@ public class DashboardService {
     private final ClinicAccessService clinicAccessService;
     private final SecurityContextService securityContextService;
 
-    public ApiErrorResponse.DashboardResponse getDashboard(Long clinicId) {
+    public ApiDashboardResponse.DashboardResponse getDashboard(Long clinicId) {
 
         if (!clinicAccessService.hasAccessToClinic(clinicId)) {
             throw new SecurityException(
@@ -60,7 +59,7 @@ public class DashboardService {
                         .map(this::toDashboardItem)
                         .toList();
 
-        return new ApiErrorResponse.DashboardResponse(
+        return new ApiDashboardResponse.DashboardResponse(
                 todayAppointments,
                 0,//pendingAppointments
                 totalPatients,

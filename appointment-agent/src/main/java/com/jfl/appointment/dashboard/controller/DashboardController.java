@@ -1,6 +1,6 @@
 package com.jfl.appointment.dashboard.controller;
 
-import com.jfl.appointment.dashboard.dto.ApiErrorResponse;
+import com.jfl.appointment.dashboard.dto.ApiDashboardResponse;
 import com.jfl.appointment.dashboard.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,7 +25,7 @@ public class DashboardController {
             'DOCTOR'
         )
     """)
-    public ApiErrorResponse.DashboardResponse getDashboard(
+    public ApiDashboardResponse.DashboardResponse getDashboard(
             @PathVariable Long clinicId) {
 
         return dashboardService.getDashboard(

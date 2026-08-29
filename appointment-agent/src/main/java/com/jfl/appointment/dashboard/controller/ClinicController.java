@@ -5,6 +5,8 @@ import com.jfl.appointment.dashboard.service.ClinicService;
 import com.jfl.appointment.entity.Clinic;
 import com.jfl.appointment.entity.ClinicHoliday;
 import com.jfl.appointment.entity.ClinicWorkingHours;
+import com.jfl.appointment.exception.ConflictException;
+import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicHolidayRepository;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ClinicWorkingHoursRepository;
@@ -38,53 +40,90 @@ public class ClinicController {
     private final ClinicWorkingHoursRepository clinicWorkingHoursRepository;
 
     @PreAuthorize("""
-                hasAnyRole(
-                    'ROLE_SUPER_ADMIN'
-                )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN'
+        )
+    """)
     @PostMapping
-    public ResponseEntity<ClinicResponse> createClinic(
+    public ResponseEntity<ApiResponse<ClinicResponse>> createClinic(
             @RequestBody CreateClinicRequest request) {
 
-        ClinicResponse response = clinicService.createClinic(request);
+        log.info("Creating clinic");
+        // --------------------------------------------------
+        // Check duplicate clinic
+        // --------------------------------------------------
+
+        boolean alreadyExists =
+                clinicRepository
+                        .existsByNameIgnoreCaseOrWhatsappNumber(
+                                request.name(),
+                                request.whatsappNumber()
+                        );
+
+        if (alreadyExists) {
+
+            throw new ConflictException(
+                    "Clinic with the same name or WhatsApp number already exists."
+            );
+        }
+        ClinicResponse response =
+                clinicService.createClinic(request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(response);
+                .body(
+                        ApiResponse.success(
+                                "Clinic created successfully.",
+                                response
+                        )
+                );
     }
 
     @PreAuthorize("""
-                hasAnyRole(
-                    'ROLE_SUPER_ADMIN',
-                    'CLINIC_ADMIN'
-                )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @GetMapping
-    public ResponseEntity<List<ClinicResponse>> getAllClinic() {
-        List<ClinicResponse> allClinic = clinicService.getAllClinic();
+    public ResponseEntity<ApiResponse<List<ClinicResponse>>> getAllClinic() {
+
+        List<ClinicResponse> allClinic =
+                clinicService.getAllClinic();
+
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(allClinic);
+                .body(
+                        ApiResponse.success(
+                                "Clinics fetched successfully.",
+                                allClinic
+                        )
+                );
     }
 
     @PreAuthorize("""
-            hasAnyRole(
-                'ROLE_SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @PostMapping("/{clinicId}/working-hours")
-    public List<WorkingHourDto> createOrUpdateWorkingHours(
+    public ResponseEntity<ApiResponse<List<WorkingHourDto>>> createOrUpdateWorkingHours(
             @PathVariable Long clinicId,
             @RequestBody List<CreateWorkingHourRequest> requests) {
 
-        log.info("Create/Update working hours for clinicId: {}", clinicId);
+        log.info(
+                "Create/Update working hours for clinicId: {}",
+                clinicId
+        );
 
         Clinic clinic = clinicRepository.findById(clinicId)
                 .orElseThrow(() ->
-                        new RuntimeException("Clinic not found: " + clinicId));
+                        new NotFoundException(
+                                "Clinic not found: " + clinicId
+                        ));
 
-        // Get existing working hours for this clinic
+        // Get existing active working hours for this clinic
         List<ClinicWorkingHours> existingWorkingHours =
                 clinicWorkingHoursRepository
                         .findByClinic_IdAndActiveTrue(clinicId);
@@ -97,17 +136,23 @@ public class ClinicController {
                                 Function.identity()
                         ));
 
-        List<ClinicWorkingHours> workingHoursToSave = new ArrayList<>();
+        List<ClinicWorkingHours> workingHoursToSave =
+                new ArrayList<>();
 
         for (CreateWorkingHourRequest request : requests) {
 
             DayOfWeek dayOfWeek =
-                    DayOfWeek.valueOf(request.dayOfWeek().toUpperCase());
+                    DayOfWeek.valueOf(
+                            request.dayOfWeek().toUpperCase()
+                    );
 
             ClinicWorkingHours workingHour =
                     existingByDay.get(dayOfWeek);
 
+            // =====================================================
             // INSERT
+            // =====================================================
+
             if (workingHour == null) {
 
                 workingHour = new ClinicWorkingHours();
@@ -116,16 +161,19 @@ public class ClinicController {
                 workingHour.setDayOfWeek(dayOfWeek);
 
                 log.info(
-                        "Creating working hour for clinicId={}, day={}",
+                        "Creating working hour. clinicId={}, day={}",
                         clinicId,
                         dayOfWeek
                 );
 
-            } else {
+            }
+            // =====================================================
+            // UPDATE
+            // =====================================================
+            else {
 
-                // UPDATE
                 log.info(
-                        "Updating working hour id={}, clinicId={}, day={}",
+                        "Updating working hour. id={}, clinicId={}, day={}",
                         workingHour.getId(),
                         clinicId,
                         dayOfWeek
@@ -147,34 +195,46 @@ public class ClinicController {
         }
 
         List<ClinicWorkingHours> savedHours =
-                clinicWorkingHoursRepository.saveAll(workingHoursToSave);
+                clinicWorkingHoursRepository.saveAll(
+                        workingHoursToSave
+                );
 
-        return savedHours.stream()
-                .map(hour -> new WorkingHourDto(
-                        hour.getId(),
-                        hour.getClinic().getId(),
-                        hour.getDayOfWeek().name(),
-                        hour.getStartTime(),
-                        hour.getEndTime(),
-                        hour.getBreakStartTime(),
-                        hour.getBreakEndTime(),
-                        hour.isActive()
-                ))
-                .toList();
+        List<WorkingHourDto> response =
+                savedHours.stream()
+                        .map(hour -> new WorkingHourDto(
+                                hour.getId(),
+                                hour.getClinic().getId(),
+                                hour.getDayOfWeek().name(),
+                                hour.getStartTime(),
+                                hour.getEndTime(),
+                                hour.getBreakStartTime(),
+                                hour.getBreakEndTime(),
+                                hour.isActive()
+                        ))
+                        .toList();
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(
+                        ApiResponse.success(
+                                "Clinic working hours created/updated successfully.",
+                                response
+                        )
+                );
     }
 
     @PreAuthorize("""
-            hasAnyRole(
-                'ROLE_SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @Cacheable(
             value = "clinicHolidays",
             key = "#clinicId"
     )
     @GetMapping("/{clinicId}/holidays")
-    public ResponseEntity<List<ClinicHolidayDto>> getClinicHolidays(
+    public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays(
             @PathVariable Long clinicId) {
 
         List<ClinicHolidayDto> holidays =
@@ -185,27 +245,35 @@ public class ClinicController {
                         .stream()
                         .map(holiday -> new ClinicHolidayDto(
                                 holiday.getId(),
+                                holiday.getName(),
                                 holiday.getClinic().getId(),
                                 holiday.getHolidayDate(),
                                 holiday.isActive()
                         ))
                         .toList();
 
-        return ResponseEntity.ok(holidays);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(
+                        ApiResponse.success(
+                                "Clinic holidays fetched successfully.",
+                                holidays
+                        )
+                );
     }
 
     @PreAuthorize("""
-            hasAnyRole(
-                'ROLE_SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @CacheEvict(
             value = "clinicHolidays",
             key = "#clinicId"
     )
     @PostMapping("/{clinicId}/holidays/create")
-    public ResponseEntity<ClinicHolidayDto> createClinicHoliday(
+    public ResponseEntity<ApiResponse<ClinicHolidayDto>> createClinicHoliday(
             @PathVariable Long clinicId,
             @Valid @RequestBody CreateClinicHolidayRequest request) {
 
@@ -215,19 +283,19 @@ public class ClinicController {
                 request.holidayDate()
         );
 
-        // ---------------------------------------------
+        // --------------------------------------------------
         // 1. Validate clinic
-        // ---------------------------------------------
+        // --------------------------------------------------
         Clinic clinic = clinicRepository
                 .findById(clinicId)
                 .orElseThrow(() ->
-                        new RuntimeException(
+                        new NotFoundException(
                                 "Clinic not found: " + clinicId
                         ));
 
-        // ---------------------------------------------
+        // --------------------------------------------------
         // 2. Check duplicate holiday
-        // ---------------------------------------------
+        // --------------------------------------------------
         boolean alreadyExists =
                 clinicHolidayRepository
                         .findByClinicIdAndHolidayDateAndActiveTrue(
@@ -237,15 +305,15 @@ public class ClinicController {
                         .isPresent();
 
         if (alreadyExists) {
-            throw new RuntimeException(
+            throw new ConflictException(
                     "Holiday already exists for date: "
                             + request.holidayDate()
             );
         }
 
-        // ---------------------------------------------
+        // --------------------------------------------------
         // 3. Create holiday
-        // ---------------------------------------------
+        // --------------------------------------------------
         ClinicHoliday holiday = new ClinicHoliday();
 
         holiday.setClinic(clinic);
@@ -253,25 +321,34 @@ public class ClinicController {
         holiday.setName(request.name());
         holiday.setActive(true);
 
-        // ---------------------------------------------
+        // --------------------------------------------------
         // 4. Save
-        // ---------------------------------------------
+        // --------------------------------------------------
         ClinicHoliday savedHoliday =
                 clinicHolidayRepository.save(holiday);
 
-        // ---------------------------------------------
-        // 5. Response
-        // ---------------------------------------------
+        // --------------------------------------------------
+        // 5. Convert to DTO
+        // --------------------------------------------------
         ClinicHolidayDto response =
                 new ClinicHolidayDto(
                         savedHoliday.getId(),
+                        savedHoliday.getName(),
                         savedHoliday.getClinic().getId(),
                         savedHoliday.getHolidayDate(),
                         savedHoliday.isActive()
                 );
 
+        // --------------------------------------------------
+        // 6. Generic API response
+        // --------------------------------------------------
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(response);
+                .body(
+                        ApiResponse.success(
+                                "Clinic holiday created successfully.",
+                                response
+                        )
+                );
     }
 }

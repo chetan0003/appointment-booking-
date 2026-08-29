@@ -1,10 +1,8 @@
 package com.jfl.appointment.dashboard.controller;
 
-import com.jfl.appointment.dashboard.dto.CreateDoctorAvailabilityRequest;
-import com.jfl.appointment.dashboard.dto.CreateDoctorRequest;
-import com.jfl.appointment.dashboard.dto.DoctorAvailabilityDto;
-import com.jfl.appointment.dashboard.dto.UpdateDoctorRequest;
+import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.entity.*;
+import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.DoctorDto;
 import com.jfl.appointment.repository.*;
 import jakarta.transaction.Transactional;
@@ -38,15 +36,18 @@ public class DoctorDashboardController {
 
 
     @Transactional
-    @CacheEvict(value = "clinicDoctors", allEntries = true)
+    @CacheEvict(
+            value = "clinicDoctors",
+            allEntries = true
+    )
     @PreAuthorize("""
-                hasAnyRole(
-                    'SUPER_ADMIN',
-                    'CLINIC_ADMIN'
-                )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @PostMapping
-    public DoctorDto createDoctor(
+    public ResponseEntity<ApiResponse<DoctorDto>> createDoctor(
             @PathVariable Long clinicId,
             @RequestBody CreateDoctorRequest request) {
 
@@ -57,54 +58,94 @@ public class DoctorDashboardController {
                 request.serviceId()
         );
 
-        Clinic clinic = clinicRepository.findById(clinicId)
-                .orElseThrow(() ->
-                        new RuntimeException("Clinic not found: " + clinicId));
+        // --------------------------------------------------
+        // 1. Validate clinic
+        // --------------------------------------------------
+        Clinic clinic =
+                clinicRepository.findById(clinicId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Clinic not found: " + clinicId
+                                )
+                        );
 
-        ServiceOffering service = serviceRepository
-                .findByIdAndClinicIdAndActiveTrue(
-                        request.serviceId(),
-                        clinicId
-                )
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Service not found or does not belong to clinic: "
-                                        + request.serviceId()
-                        ));
+        // --------------------------------------------------
+        // 2. Validate service
+        // --------------------------------------------------
+        ServiceOffering service =
+                serviceRepository
+                        .findByIdAndClinicIdAndActiveTrue(
+                                request.serviceId(),
+                                clinicId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Service not found or does not belong to clinic: "
+                                                + request.serviceId()
+                                )
+                        );
 
+        // --------------------------------------------------
+        // 3. Create doctor
+        // --------------------------------------------------
         Doctor doctor = new Doctor();
+
         doctor.setName(request.name());
         doctor.setSpecialization(request.specialization());
         doctor.setClinic(clinic);
         doctor.setActive(true);
 
-        Doctor savedDoctor = doctorRepository.save(doctor);
+        Doctor savedDoctor =
+                doctorRepository.save(doctor);
 
-        DoctorService doctorService = DoctorService.builder()
-                .doctor(savedDoctor)
-                .service(service)
-                .build();
+        // --------------------------------------------------
+        // 4. Map doctor with service
+        // --------------------------------------------------
+        DoctorService doctorService =
+                DoctorService.builder()
+                        .doctor(savedDoctor)
+                        .service(service)
+                        .build();
 
         doctorServiceRepository.save(doctorService);
 
-        return new DoctorDto(
-                savedDoctor.getId(),
-                savedDoctor.getName(),
-                savedDoctor.getSpecialization(),
-                savedDoctor.isActive()
-        );
+        // --------------------------------------------------
+        // 5. Create response DTO
+        // --------------------------------------------------
+        DoctorDto doctorResponse =
+                new DoctorDto(
+                        savedDoctor.getId(),
+                        savedDoctor.getName(),
+                        savedDoctor.getSpecialization(),
+                        savedDoctor.isActive()
+                );
+
+        // --------------------------------------------------
+        // 6. Generic API response
+        // --------------------------------------------------
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        ApiResponse.success(
+                                "Doctor created successfully.",
+                                doctorResponse
+                        )
+                );
     }
 
     @Transactional
-    @CacheEvict(value = "clinicDoctors", allEntries = true)
+    @CacheEvict(
+            value = "clinicDoctors",
+            key = "#clinicId"
+    )
     @PreAuthorize("""
-                hasAnyRole(
-                    'SUPER_ADMIN',
-                    'CLINIC_ADMIN'
-                )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @PutMapping("/{doctorId}")
-    public DoctorDto updateDoctor(
+    public ResponseEntity<ApiResponse<DoctorDto>> updateDoctor(
             @PathVariable Long clinicId,
             @PathVariable Long doctorId,
             @RequestBody UpdateDoctorRequest request) {
@@ -116,83 +157,155 @@ public class DoctorDashboardController {
                 request.serviceId()
         );
 
+        // --------------------------------------------------
         // 1. Find doctor belonging to this clinic
+        // --------------------------------------------------
         Doctor doctor = doctorRepository
                 .findByIdAndClinicId(doctorId, clinicId)
                 .orElseThrow(() ->
-                        new RuntimeException(
+                        new NotFoundException(
                                 "Doctor not found: " + doctorId
-                        ));
+                        )
+                );
 
+        // --------------------------------------------------
         // 2. Validate service belongs to same clinic
+        // --------------------------------------------------
         ServiceOffering service = serviceRepository
                 .findByIdAndClinicIdAndActiveTrue(
                         request.serviceId(),
                         clinicId
                 )
                 .orElseThrow(() ->
-                        new RuntimeException(
+                        new NotFoundException(
                                 "Service not found or does not belong to clinic: "
                                         + request.serviceId()
-                        ));
+                        )
+                );
 
+        // --------------------------------------------------
         // 3. Update doctor
+        // --------------------------------------------------
         doctor.setName(request.name());
         doctor.setSpecialization(request.specialization());
         doctor.setActive(request.active());
 
-        doctorRepository.save(doctor);
+        Doctor savedDoctor =
+                doctorRepository.save(doctor);
 
+        // --------------------------------------------------
         // 4. Update doctor-service mapping
-        DoctorService doctorService = doctorServiceRepository
-                .findByDoctorId(doctorId)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "Service mapping not found for doctor: "
-                                        + doctorId
-                        ));
+        // --------------------------------------------------
+        DoctorService doctorService =
+                doctorServiceRepository
+                        .findByDoctorId(doctorId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Service mapping not found for doctor: "
+                                                + doctorId
+                                )
+                        );
 
         doctorService.setService(service);
 
         doctorServiceRepository.save(doctorService);
 
-        return new DoctorDto(
-                doctor.getId(),
-                doctor.getName(),
-                doctor.getSpecialization(),
-                doctor.isActive()
-        );
+        // --------------------------------------------------
+        // 5. Create response DTO
+        // --------------------------------------------------
+        DoctorDto doctorResponse =
+                new DoctorDto(
+                        savedDoctor.getId(),
+                        savedDoctor.getName(),
+                        savedDoctor.getSpecialization(),
+                        savedDoctor.isActive()
+                );
+
+        // --------------------------------------------------
+        // 6. Generic API response
+        // --------------------------------------------------
+        return ResponseEntity
+                .ok(
+                        ApiResponse.success(
+                                "Doctor updated successfully.",
+                                doctorResponse
+                        )
+                );
     }
 
     @PreAuthorize("""
-                hasAnyRole(
-                    'ROLE_SUPER_ADMIN',
-                    'CLINIC_ADMIN',
-                    'STAFF',
-                    'DOCTOR'
-                )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN',
+            'STAFF',
+            'DOCTOR'
+        )
+        """)
     @GetMapping
-    public List<DoctorDto> getDoctors(@PathVariable Long clinicId, @RequestParam(required = false) Long serviceId) {
-        log.info("Get Doctors : clinicId -> {} , ServiceId -> {}", clinicId, serviceId);
-        if (StringUtils.isEmpty(serviceId))
-            return doctorRepository.findByClinicId(clinicId).stream()
-                    .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization(), d.isActive()))
-                    .toList();
-        return doctorRepository.findDoctorsByClinicAndServiceForDashboard(clinicId, serviceId).stream()
-                .map(d -> new DoctorDto(d.getId(), d.getName(), d.getSpecialization(), d.isActive()))
-                .toList();
+    public ResponseEntity<ApiResponse<List<DoctorDto>>> getDoctors(
+            @PathVariable Long clinicId,
+            @RequestParam(required = false) Long serviceId) {
 
+        log.info(
+                "Get Doctors : clinicId -> {}, serviceId -> {}",
+                clinicId,
+                serviceId
+        );
+
+        List<DoctorDto> doctors;
+
+        if (serviceId == null) {
+
+            doctors = doctorRepository
+                    .findByClinicId(clinicId)
+                    .stream()
+                    .map(d -> new DoctorDto(
+                            d.getId(),
+                            d.getName(),
+                            d.getSpecialization(),
+                            d.isActive()
+                    ))
+                    .toList();
+
+        } else {
+
+            doctors = doctorRepository
+                    .findDoctorsByClinicAndServiceForDashboard(
+                            clinicId,
+                            serviceId
+                    )
+                    .stream()
+                    .map(d -> new DoctorDto(
+                            d.getId(),
+                            d.getName(),
+                            d.getSpecialization(),
+                            d.isActive()
+                    ))
+                    .toList();
+        }
+
+        return ResponseEntity
+                .ok(
+                        ApiResponse.success(
+                                "Doctors fetched successfully.",
+                                doctors
+                        )
+                );
     }
 
+    @Transactional
+    @CacheEvict(
+            value = "doctorAvailability",
+            key = "#doctorId"
+    )
     @PreAuthorize("""
-            hasAnyRole(
-                'ROLE_SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @PostMapping("/{doctorId}/availability")
-    public ResponseEntity<List<DoctorAvailabilityDto>> createOrUpdateAvailability(
+    public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> createOrUpdateAvailability(
             @PathVariable Long clinicId,
             @PathVariable Long doctorId,
             @RequestBody List<CreateDoctorAvailabilityRequest> requests) {
@@ -215,7 +328,7 @@ public class DoctorDashboardController {
                                         .equals(clinicId)
                         )
                         .orElseThrow(() ->
-                                new RuntimeException(
+                                new NotFoundException(
                                         "Doctor not found: " + doctorId
                                 )
                         );
@@ -247,6 +360,9 @@ public class DoctorDashboardController {
         // --------------------------------------------------
         for (CreateDoctorAvailabilityRequest request : requests) {
 
+            // ----------------------------------------------
+            // Validate day
+            // ----------------------------------------------
             DayOfWeek dayOfWeek;
 
             try {
@@ -255,7 +371,8 @@ public class DoctorDashboardController {
                                 request.dayOfWeek().toUpperCase()
                         );
             } catch (IllegalArgumentException e) {
-                throw new RuntimeException(
+
+                throw new IllegalArgumentException(
                         "Invalid day of week: "
                                 + request.dayOfWeek()
                 );
@@ -267,7 +384,7 @@ public class DoctorDashboardController {
             if (request.startTime() == null
                     || request.endTime() == null) {
 
-                throw new RuntimeException(
+                throw new IllegalArgumentException(
                         "Start time and end time are required for "
                                 + dayOfWeek
                 );
@@ -276,7 +393,7 @@ public class DoctorDashboardController {
             if (!request.startTime()
                     .isBefore(request.endTime())) {
 
-                throw new RuntimeException(
+                throw new IllegalArgumentException(
                         "Start time must be before end time for "
                                 + dayOfWeek
                 );
@@ -291,29 +408,30 @@ public class DoctorDashboardController {
                 if (request.breakStartTime() == null
                         || request.breakEndTime() == null) {
 
-                    throw new RuntimeException(
+                    throw new IllegalArgumentException(
                             "Both break start and break end "
-                                    + "must be provided"
+                                    + "must be provided for "
+                                    + dayOfWeek
                     );
                 }
 
                 if (!request.breakStartTime()
                         .isBefore(request.breakEndTime())) {
 
-                    throw new RuntimeException(
+                    throw new IllegalArgumentException(
                             "Break start time must be before "
                                     + "break end time for "
                                     + dayOfWeek
                     );
                 }
 
-                // Break must be inside doctor's working hours
+                // Break must be within doctor's working hours
                 if (request.breakStartTime()
                         .isBefore(request.startTime())
                         || request.breakEndTime()
                         .isAfter(request.endTime())) {
 
-                    throw new RuntimeException(
+                    throw new IllegalArgumentException(
                             "Break time must be within doctor's "
                                     + "working hours for "
                                     + dayOfWeek
@@ -345,11 +463,12 @@ public class DoctorDashboardController {
                         dayOfWeek
                 );
 
-            } else {
+            }
+            // ----------------------------------------------
+            // UPDATE
+            // ----------------------------------------------
+            else {
 
-                // ------------------------------------------
-                // UPDATE
-                // ------------------------------------------
                 log.info(
                         "Updating doctor availability. "
                                 + "id={}, doctorId={}, day={}",
@@ -399,25 +518,27 @@ public class DoctorDashboardController {
                         .map(availability ->
                                 new DoctorAvailabilityDto(
                                         availability.getId(),
-                                        availability
-                                                .getDoctor()
-                                                .getId(),
-                                        availability
-                                                .getDayOfWeek()
-                                                .name(),
+                                        availability.getDoctor().getId(),
+                                        availability.getDayOfWeek().name(),
                                         availability.getStartTime(),
                                         availability.getEndTime(),
-                                        availability
-                                                .getBreakStartTime(),
-                                        availability
-                                                .getBreakEndTime(),
+                                        availability.getBreakStartTime(),
+                                        availability.getBreakEndTime(),
                                         availability.isActive()
                                 )
                         )
                         .toList();
 
+        // --------------------------------------------------
+        // 7. Generic API response
+        // --------------------------------------------------
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .body(response);
+                .body(
+                        ApiResponse.success(
+                                "Doctor availability created/updated successfully.",
+                                response
+                        )
+                );
     }
 }
