@@ -22,4 +22,9 @@ public interface DoctorServiceRepository
             """)
     Optional<DoctorService> findByDoctorIdWithService(
             @Param("doctorId") Long doctorId);
+
+    boolean existsByDoctorIdAndServiceId(
+            Long doctorId,
+            Long serviceId
+    );
 }

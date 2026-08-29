@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -101,4 +102,17 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             @Param("date") LocalDate date,
             @Param("doctorId") Long doctorId
     );
+
+    List<Appointment> findByDoctorIdAndAppointmentDateAndStatusIn(
+            Long doctorId,
+            LocalDate date,
+            Collection<AppointmentStatus> statuses
+    );
+
+    List<Appointment> findByDoctorIdAndAppointmentDate(
+            Long doctorId,
+            LocalDate appointmentDate
+    );
+
+
 }
