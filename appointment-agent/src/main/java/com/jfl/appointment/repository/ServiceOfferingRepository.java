@@ -12,4 +12,9 @@ public interface ServiceOfferingRepository extends JpaRepository<ServiceOffering
             Long id,
             Long clinicId
     );
+
+    Optional<ServiceOffering> findByIdAndClinicId(
+            Long serviceId,
+            Long clinicId
+    );
 }

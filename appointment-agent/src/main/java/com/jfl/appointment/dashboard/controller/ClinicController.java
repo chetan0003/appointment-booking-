@@ -21,6 +21,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.Month;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -236,13 +238,14 @@ public class ClinicController {
     @GetMapping("/{clinicId}/holidays")
     public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays(
             @PathVariable Long clinicId) {
-
+        Month month = LocalDate.now().getMonth();
         List<ClinicHolidayDto> holidays =
                 clinicHolidayRepository
                         .findByClinicIdAndActiveTrueOrderByHolidayDateAsc(
                                 clinicId
                         )
                         .stream()
+                        .filter(f-> month.equals(f.getHolidayDate().getMonth()))
                         .map(holiday -> new ClinicHolidayDto(
                                 holiday.getId(),
                                 holiday.getName(),

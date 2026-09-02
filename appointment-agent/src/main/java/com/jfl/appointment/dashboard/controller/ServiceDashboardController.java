@@ -12,6 +12,7 @@ import com.jfl.appointment.repository.DoctorServiceRepository;
 import com.jfl.appointment.repository.ServiceOfferingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +32,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ServiceDashboardController {
 
+    private final CacheManager cacheManager;
     private final ServiceOfferingRepository serviceRepository;
     private final ClinicRepository clinicRepository;
     private final DoctorServiceRepository doctorServiceRepository;
@@ -151,6 +153,33 @@ public class ServiceDashboardController {
                                 services
                         )
                 );
+    }
+
+    @DeleteMapping("/{serviceId}")
+    public ResponseEntity<ApiResponse<Void>> deleteService(
+            @PathVariable Long clinicId,
+            @PathVariable Long serviceId) {
+
+        ServiceOffering service = serviceRepository
+                .findByIdAndClinicId(serviceId, clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException("Service not found."));
+
+        service.setActive(false);
+        // First remove doctor-service mappings
+        doctorServiceRepository.deleteByServiceId(serviceId);
+
+        serviceRepository.delete(service);
+
+        // Evict service cache
+        cacheManager.getCache("clinicServices").evict(clinicId);
+
+        // If doctor list contains services, evict this too
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Service deleted successfully.", null)
+        );
     }
 
     private ServiceDto toDto(ServiceOffering s) {

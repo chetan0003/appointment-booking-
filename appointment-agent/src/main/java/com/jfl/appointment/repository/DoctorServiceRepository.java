@@ -2,6 +2,7 @@ package com.jfl.appointment.repository;
 
 import com.jfl.appointment.entity.DoctorService;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,4 +28,8 @@ public interface DoctorServiceRepository
             Long doctorId,
             Long serviceId
     );
+
+    @Modifying
+    @Query("DELETE FROM DoctorService ds WHERE ds.service.id = :serviceId")
+    void deleteByServiceId(@Param("serviceId") Long serviceId);
 }

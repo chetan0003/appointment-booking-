@@ -8,11 +8,11 @@ import com.jfl.appointment.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.DayOfWeek;
@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DoctorDashboardController {
 
+    private final CacheManager cacheManager;
     private final ClinicRepository clinicRepository;
     private final DoctorRepository doctorRepository;
     private final ServiceOfferingRepository serviceRepository;
@@ -540,5 +541,27 @@ public class DoctorDashboardController {
                                 response
                         )
                 );
+    }
+
+    @DeleteMapping("/{doctorId}/delete")
+    public ResponseEntity<ApiResponse<Void>> deleteDoctor(
+            @PathVariable Long clinicId,
+            @PathVariable Long doctorId) {
+
+        Doctor doctor = doctorRepository
+                .findByIdAndClinicId(doctorId, clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException("Doctor not found."));
+
+        doctor.setActive(false);
+
+        doctorRepository.delete(doctor);
+
+        // If you are caching doctors by clinic
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Doctor deleted successfully.", null)
+        );
     }
 }

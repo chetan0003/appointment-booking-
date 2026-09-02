@@ -1,15 +1,17 @@
 package com.jfl.appointment.dashboard.service;
 
-import com.jfl.appointment.dashboard.dto.AppointmentListItemDto;
-import com.jfl.appointment.entity.Appointment;
-import com.jfl.appointment.entity.AppointmentStatus;
-import com.jfl.appointment.entity.ClinicUser;
+import com.jfl.appointment.dashboard.dto.*;
+import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.exception.SlotUnavailableException;
 import com.jfl.appointment.n8n.service.AvailabilityService;
-import com.jfl.appointment.repository.AppointmentRepository;
+import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.IntegrationUtil;
 import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,19 +19,428 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AppointmentAdminService {
 
     private final AppointmentRepository appointmentRepository;
-    private final AvailabilityService availabilityService;
+    private final ClinicRepository clinicRepository;
     private final ClinicAccessService clinicAccessService;
     private final SecurityContextService securityContextService;
+    private final PatientRepository patientRepository;
+    private final DoctorRepository doctorRepository;
+    private final ServiceOfferingRepository serviceOfferingRepository;
+    private final DoctorServiceRepository doctorServiceRepository;
+    private final NotificationService notificationService;
+
+    @Transactional
+    public AppointmentListItemDto createAppointment(
+            Long clinicId,
+            CreateAppointmentRequest request) {
+
+        log.info(
+                "Creating normal appointment. clinicId={}, patientId={}, doctorId={}, serviceId={}",
+                clinicId,
+                request.patientId(),
+                request.doctorId(),
+                request.serviceId()
+        );
+
+        // Idempotency: if a request with this key already produced a booking, return it
+        // instead of creating a duplicate (handles WhatsApp/n8n webhook retries).
+        if (request.idempotencyKey() != null) {
+            Optional<Appointment> existing = appointmentRepository.findByAppointmentCode(
+                    "IDEMP-" + request.idempotencyKey());
+            if (existing.isPresent()) {
+                return toDto(existing.get());
+            }
+        }
+        // =====================================================
+        // 1. Validate clinic
+        // =====================================================
+
+        Clinic clinic = clinicRepository
+                .findById(clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Clinic not found: " + clinicId
+                        )
+                );
+
+        // =====================================================
+        // 2. Validate patient
+        // =====================================================
+
+        Patient patient = patientRepository
+                .findById(request.patientId())
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Patient not found: "
+                                        + request.patientId()
+                        )
+                );
+
+        if (!patient.getClinic().getId().equals(clinicId)) {
+            throw new IllegalArgumentException(
+                    "Patient does not belong to this clinic."
+            );
+        }
+
+        // =====================================================
+        // 3. Validate doctor
+        // =====================================================
+
+        Doctor doctor = doctorRepository
+                .findById(request.doctorId())
+                .filter(d ->
+                        d.getClinic().getId().equals(clinicId)
+                )
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Doctor not found: "
+                                        + request.doctorId()
+                        )
+                );
+
+        if (!doctor.isActive()) {
+            throw new IllegalArgumentException(
+                    "Doctor is not active."
+            );
+        }
+
+        // =====================================================
+        // 4. Validate service
+        // =====================================================
+
+        ServiceOffering service =
+                serviceOfferingRepository
+                        .findByIdAndClinicIdAndActiveTrue(
+                                request.serviceId(),
+                                clinicId
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Service not found or does not belong to clinic: "
+                                                + request.serviceId()
+                                )
+                        );
+
+        // =====================================================
+        // 5. Validate doctor-service mapping
+        // =====================================================
+
+        boolean doctorProvidesService =
+                doctorServiceRepository
+                        .existsByDoctorIdAndServiceId(
+                                doctor.getId(),
+                                service.getId()
+                        );
+
+        if (!doctorProvidesService) {
+            throw new IllegalArgumentException(
+                    "Doctor does not provide the selected service."
+            );
+        }
+
+        // =====================================================
+        // 6. Validate time
+        // =====================================================
+
+        if (!request.startTime()
+                .isBefore(request.endTime())) {
+
+            throw new IllegalArgumentException(
+                    "Start time must be before end time."
+            );
+        }
+
+        // =====================================================
+        // 7. Validate service duration
+        // =====================================================
+
+        LocalTime expectedEnd =
+                request.startTime()
+                        .plusMinutes(
+                                service.getDurationMinutes()
+                        );
+
+        if (!expectedEnd.equals(request.endTime())) {
+
+            throw new IllegalArgumentException(
+                    "Appointment time does not match service duration."
+            );
+        }
+
+        // =====================================================
+        // 8. Check doctor slot conflict
+        // =====================================================
+
+        boolean conflict =
+                appointmentRepository.existsConflict(
+                        doctor.getId(),
+                        request.appointmentDate(),
+                        request.startTime(),
+                        request.endTime()
+                );
+
+        if (conflict) {
+            throw new SlotUnavailableException(
+                    "The selected appointment slot is not available."
+            );
+        }
+
+        // =====================================================
+        // 9. Create appointment
+        // =====================================================
+
+        Appointment appointment =
+                new Appointment();
+
+        appointment.setClinic(clinic);
+        appointment.setPatient(patient);
+        appointment.setDoctor(doctor);
+        appointment.setService(service);
+        appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
+        appointment.setAppointmentDate(
+                request.appointmentDate()
+        );
+
+        appointment.setStartTime(
+                request.startTime()
+        );
+
+        appointment.setEndTime(
+                request.endTime()
+        );
+
+        appointment.setStatus(
+                AppointmentStatus.CONFIRMED
+        );
+
+        // Normal appointment
+        appointment.setFollowUpOfAppointment(null);
+
+        Appointment savedAppointment =
+                appointmentRepository.save(appointment);
+
+        log.info(
+                "Appointment created successfully. appointmentId={}",
+                savedAppointment.getId()
+        );
+
+        // =====================================================
+        // 10. Create booking notification
+        // =====================================================
+
+        // notificationService.createBookingConfirmation(
+        //         savedAppointment
+        // );
+
+        return toDto(savedAppointment);
+    }
+
+
+    @Transactional
+    public AppointmentListItemDto createNextAppointment(
+            Long previousAppointmentId,
+            CreateNextAppointmentRequest request) {
+
+        log.info(
+                "Creating next appointment. previousAppointmentId={}",
+                previousAppointmentId
+        );
+
+        // =====================================================
+        // 1. Get previous appointment
+        // =====================================================
+
+        Appointment previousAppointment =
+                appointmentRepository
+                        .findById(previousAppointmentId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Previous appointment not found: "
+                                                + previousAppointmentId
+                                )
+                        );
+
+        // =====================================================
+        // 2. Previous appointment must be completed
+        // =====================================================
+
+        if (previousAppointment.getStatus()
+                != AppointmentStatus.COMPLETED) {
+
+            throw new IllegalArgumentException(
+                    "Next appointment can only be scheduled "
+                            + "for a completed appointment."
+            );
+        }
+
+        // =====================================================
+        // 3. Validate date/time
+        // =====================================================
+
+        if (!request.startTime()
+                .isBefore(request.endTime())) {
+
+            throw new IllegalArgumentException(
+                    "Start time must be before end time."
+            );
+        }
+
+        if (!request.appointmentDate()
+                .isAfter(
+                        previousAppointment.getAppointmentDate()
+                )) {
+
+            throw new IllegalArgumentException(
+                    "Next appointment date must be after "
+                            + "the previous appointment date."
+            );
+        }
+
+        // =====================================================
+        // 4. Get existing doctor/service
+        // =====================================================
+
+        Doctor doctor =
+                previousAppointment.getDoctor();
+
+        ServiceOffering service =
+                previousAppointment.getService();
+
+        Clinic clinic =
+                previousAppointment.getClinic();
+
+        Patient patient =
+                previousAppointment.getPatient();
+
+        // =====================================================
+        // 5. Validate active doctor
+        // =====================================================
+
+        if (!doctor.isActive()) {
+            throw new IllegalArgumentException(
+                    "Doctor is not active."
+            );
+        }
+
+        // =====================================================
+        // 6. Validate service
+        // =====================================================
+
+        if (!service.isActive()) {
+            throw new IllegalArgumentException(
+                    "Service is not active."
+            );
+        }
+
+        // =====================================================
+        // 7. Validate service duration
+        // =====================================================
+
+        LocalTime expectedEnd =
+                request.startTime()
+                        .plusMinutes(
+                                service.getDurationMinutes()
+                        );
+
+        if (!expectedEnd.equals(request.endTime())) {
+
+            throw new IllegalArgumentException(
+                    "Appointment time does not match service duration."
+            );
+        }
+
+        // =====================================================
+        // 8. Check slot conflict
+        // =====================================================
+
+        boolean conflict =
+                appointmentRepository.existsConflict(
+                        doctor.getId(),
+                        request.appointmentDate(),
+                        request.startTime(),
+                        request.endTime()
+                );
+
+        if (conflict) {
+
+            throw new SlotUnavailableException(
+                    "The selected appointment slot is not available."
+            );
+        }
+
+        // =====================================================
+        // 9. Create NEW appointment
+        // =====================================================
+
+        Appointment nextAppointment =
+                new Appointment();
+
+        nextAppointment.setClinic(clinic);
+        nextAppointment.setPatient(patient);
+        nextAppointment.setDoctor(doctor);
+        nextAppointment.setService(service);
+        nextAppointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(null));
+        nextAppointment.setAppointmentDate(
+                request.appointmentDate()
+        );
+
+        nextAppointment.setStartTime(
+                request.startTime()
+        );
+
+        nextAppointment.setEndTime(
+                request.endTime()
+        );
+
+        nextAppointment.setStatus(
+                AppointmentStatus.CONFIRMED
+        );
+
+        // IMPORTANT:
+        // Link new appointment to previous appointment
+
+        nextAppointment.setFollowUpOfAppointment(
+                previousAppointment
+        );
+
+        // =====================================================
+        // 10. Save
+        // =====================================================
+
+        Appointment savedAppointment =
+                appointmentRepository.save(
+                        nextAppointment
+                );
+
+        log.info(
+                "Next appointment created. previousAppointmentId={}, newAppointmentId={}",
+                previousAppointmentId,
+                savedAppointment.getId()
+        );
+
+        // =====================================================
+        // 11. Booking notification
+        // =====================================================
+
+        // notificationService.createBookingConfirmation(
+        //         savedAppointment
+        // );
+
+        return toDto(savedAppointment);
+    }
 
     @Transactional(readOnly = true)
-    public List<AppointmentListItemDto> listAppointments(Long clinicId, LocalDate from, LocalDate to,
-                                                         Long doctorId, AppointmentStatus status,Long serviceId) {
+    public Page<AppointmentListItemDto> listAppointments(Long clinicId, LocalDate from, LocalDate to,
+                                                         Long doctorId, AppointmentStatus status,
+                                                         Long serviceId, Pageable pageable) {
 
         if (!clinicAccessService
                 .hasAccessToClinic(clinicId)) {
@@ -54,16 +465,10 @@ public class AppointmentAdminService {
                         clinicId,
                         serviceId,
                         doctorId,
-                        status
+                        status,
+                        pageable
                 )
-                .stream()
-                .map(this::toDto)
-                .toList();
-//        return appointmentRepository.findForDashboard(clinicId).stream()
-//                .filter(a -> doctorId == null || a.getDoctor().getId().equals(doctorId))
-//                .filter(a -> status == null || a.getStatus() == status)
-//                .map(this::toDto)
-//                .toList();
+                .map(this::toDto);
     }
 
 
@@ -87,38 +492,109 @@ public class AppointmentAdminService {
         return toDto(appointment);
     }
 
-    /**
-     * Same "lock, re-check, then act" pattern as DashboardAppointmentService.createAppointment -
-     * see that class for the full rationale. Here the extra piece is excluding this
-     * appointment's own id from the availability check, since it still holds its old
-     * slot right up until this transaction commits.
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public AppointmentListItemDto rescheduleAppointment(Long appointmentId, LocalDate newDate, LocalTime newStartTime) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new NotFoundException("Appointment not found: " + appointmentId));
+    @Transactional
+    public AppointmentListItemDto rescheduleAppointment(
+            Long appointmentId,
+            RescheduleAppointmentRequest request) {
 
-        if (appointment.getStatus() != AppointmentStatus.CONFIRMED) {
-            throw new SlotUnavailableException(
-                    "Only a CONFIRMED appointment can be rescheduled (current status: " + appointment.getStatus() + ")");
+        Appointment appointment =
+                appointmentRepository.findById(appointmentId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Appointment not found: " + appointmentId
+                                )
+                        );
+
+        // ---------------------------------------------
+        // Validate date/time
+        // ---------------------------------------------
+
+        if (!request.startTime().isBefore(request.endTime())) {
+            throw new IllegalArgumentException(
+                    "Start time must be before end time."
+            );
         }
 
-        appointmentRepository.lockDoctorAppointmentsForDate(appointment.getDoctor().getId(), newDate);
+        // ---------------------------------------------
+        // Don't allow rescheduling completed/cancelled
+        // appointments
+        // ---------------------------------------------
 
-        List<LocalTime> freshSlots = availabilityService.computeSlots(
-                appointment.getClinic().getId(), appointment.getDoctor(), appointment.getService(),
-                newDate, appointment.getId());
+        if (appointment.getStatus() == AppointmentStatus.COMPLETED
+                || appointment.getStatus() == AppointmentStatus.CANCELLED
+                || appointment.getStatus() == AppointmentStatus.NO_SHOW) {
 
-        if (!freshSlots.contains(newStartTime)) {
-            throw new SlotUnavailableException(
-                    "Requested slot " + newStartTime + " on " + newDate + " is not available for this doctor.");
+            throw new IllegalArgumentException(
+                    "Appointment cannot be rescheduled from status: "
+                            + appointment.getStatus()
+            );
         }
 
-        appointment.setAppointmentDate(newDate);
-        appointment.setStartTime(newStartTime);
-        appointment.setEndTime(newStartTime.plusMinutes(appointment.getService().getDurationMinutes()));
+        // ---------------------------------------------
+        // Check slot availability
+        // ---------------------------------------------
 
-        return toDto(appointment);
+        boolean slotAvailable =
+                appointmentRepository.existsConflictForReschedule(
+                        appointment.getDoctor().getId(),
+                        request.appointmentDate(),
+                        request.startTime(),
+                        request.endTime(),
+                        appointmentId
+                );
+
+        if (slotAvailable) {
+            throw new SlotUnavailableException(
+                    "The selected slot is no longer available."
+            );
+        }
+
+        // ---------------------------------------------
+        // Save old values for notification/audit
+        // ---------------------------------------------
+
+        LocalDate oldDate =
+                appointment.getAppointmentDate();
+
+        LocalTime oldStart =
+                appointment.getStartTime();
+
+        LocalTime oldEnd =
+                appointment.getEndTime();
+
+        // ---------------------------------------------
+        // Update appointment
+        // ---------------------------------------------
+
+        appointment.setAppointmentDate(
+                request.appointmentDate()
+        );
+
+        appointment.setStartTime(
+                request.startTime()
+        );
+
+        appointment.setEndTime(
+                request.endTime()
+        );
+
+        Appointment savedAppointment =
+                appointmentRepository.save(appointment);
+
+        // ---------------------------------------------
+        // Notification
+        // ---------------------------------------------
+
+        // Create RESCHEDULED notification here.
+        //
+        // notificationService.createRescheduledNotification(
+        //         savedAppointment,
+        //         oldDate,
+        //         oldStart,
+        //         oldEnd
+        // );
+
+        return toDto(savedAppointment);
     }
 
     private AppointmentListItemDto toDto(Appointment a) {
@@ -134,7 +610,9 @@ public class AppointmentAdminService {
                 a.getService().getId(),
                 a.getService().getName(),
                 a.getPatient().getName(),
-                a.getPatient().getWhatsappNumber()
+                a.getPatient().getWhatsappNumber(),
+                a.getFollowUpOfAppointment() != null ? a.getFollowUpOfAppointment().getId():null,
+                a.getSuggestedFollowUpDate()
         );
     }
 
@@ -170,4 +648,67 @@ public class AppointmentAdminService {
             );
         }
     }
+
+    @Transactional
+    public AppointmentListItemDto suggestFollowUp(
+            Long appointmentId,
+            FollowUpRequest request) {
+
+        Appointment appointment =
+                appointmentRepository.findById(appointmentId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Appointment not found: "
+                                                + appointmentId
+                                )
+                        );
+
+        // ---------------------------------------------
+        // Follow-up should normally be added after
+        // consultation is completed
+        // ---------------------------------------------
+
+        if (appointment.getStatus()
+                != AppointmentStatus.IN_PROGRESS) {
+
+            throw new IllegalArgumentException(
+                    "Follow-up can only be suggested for a completed appointment."
+            );
+        }
+
+        // ---------------------------------------------
+        // Validate follow-up date
+        // ---------------------------------------------
+
+        if (request.suggestedFollowUpDate()
+                .isBefore(appointment.getAppointmentDate())) {
+
+            throw new IllegalArgumentException(
+                    "Follow-up date cannot be before the appointment date."
+            );
+        }
+
+        // ---------------------------------------------
+        // Save suggested follow-up date
+        // ---------------------------------------------
+
+        appointment.setSuggestedFollowUpDate(
+                request.suggestedFollowUpDate()
+        );
+        //added by me
+        appointment.setStatus(AppointmentStatus.COMPLETED);
+        Appointment savedAppointment =
+                appointmentRepository.save(appointment);
+
+        // ---------------------------------------------
+        // Optional notification
+        // ---------------------------------------------
+
+//         notificationService.createFollowUpSuggestedNotification(
+//                 savedAppointment
+//         );
+
+        return toDto(savedAppointment);
+    }
+
 }
