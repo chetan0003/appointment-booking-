@@ -161,4 +161,10 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime
     );
+
+    Page<Appointment> findByClinicIdAndPatientIdOrderByAppointmentDateAscStartTimeAsc(
+            Long clinicId,
+            Long patientId,
+            Pageable pageable
+    );
 }

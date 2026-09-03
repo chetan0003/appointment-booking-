@@ -200,12 +200,17 @@ public class DoctorDashboardController {
         DoctorService doctorService =
                 doctorServiceRepository
                         .findByDoctorId(doctorId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Service mapping not found for doctor: "
-                                                + doctorId
-                                )
-                        );
+                        .orElseGet(() -> {
+
+                            DoctorService newMapping = new DoctorService();
+
+                            newMapping.setDoctor(doctor);
+
+                            // assuming you already have the service entity
+                            newMapping.setService(service);
+
+                            return doctorServiceRepository.save(newMapping);
+                        });
 
         doctorService.setService(service);
 

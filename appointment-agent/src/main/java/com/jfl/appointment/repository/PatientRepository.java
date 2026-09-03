@@ -50,4 +50,10 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
             Long clinicId,
             Pageable pageable
     );
+
+    Optional<Patient> findByIdAndClinicId(
+            Long id,
+            Long clinicId
+    );
+
 }

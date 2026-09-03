@@ -1,8 +1,10 @@
 package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.ApiResponse;
+import com.jfl.appointment.dashboard.dto.AppointmentListItemDto;
 import com.jfl.appointment.dashboard.dto.CreatePatientRequest;
 import com.jfl.appointment.dashboard.dto.PatientResponseDto;
+import com.jfl.appointment.dashboard.service.AppointmentAdminService;
 import com.jfl.appointment.dashboard.service.PatientService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +25,7 @@ public class PatientController {
 
 
     private final PatientService patientService;
+    private final AppointmentAdminService appointmentAdminService;
 
 
     @PreAuthorize("""
@@ -127,6 +130,29 @@ public class PatientController {
                 ApiResponse.success(
                         "Patients fetched successfully.",
                         patients
+                )
+        );
+    }
+
+    @GetMapping("/{patientId}/appointments")
+    public ResponseEntity<ApiResponse<Page<AppointmentListItemDto>>> getPatientAppointments(
+            @PathVariable Long clinicId,
+            @PathVariable Long patientId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        Page<AppointmentListItemDto> appointments =
+                appointmentAdminService.getPatientAppointments(
+                        clinicId,
+                        patientId,
+                        page,
+                        size
+                );
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Patient appointments fetched successfully.",
+                        appointments
                 )
         );
     }

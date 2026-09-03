@@ -11,6 +11,7 @@ import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,6 +37,7 @@ public class AppointmentAdminService {
     private final ServiceOfferingRepository serviceOfferingRepository;
     private final DoctorServiceRepository doctorServiceRepository;
     private final NotificationService notificationService;
+    private final AvailabilityService availabilityService;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
@@ -146,6 +148,10 @@ public class AppointmentAdminService {
             );
         }
 
+        //=================check availability ===================
+        List<LocalTime> slots = availabilityService.computeSlots(clinicId, doctor, service, request.appointmentDate());
+        if (slots.isEmpty())
+            throw new NotFoundException("Slot is not available");
         // =====================================================
         // 6. Validate time
         // =====================================================
@@ -236,9 +242,9 @@ public class AppointmentAdminService {
         // 10. Create booking notification
         // =====================================================
 
-        // notificationService.createBookingConfirmation(
-        //         savedAppointment
-        // );
+         notificationService.createBookingConfirmation(
+                 savedAppointment
+         );
 
         return toDto(savedAppointment);
     }
@@ -611,7 +617,7 @@ public class AppointmentAdminService {
                 a.getService().getName(),
                 a.getPatient().getName(),
                 a.getPatient().getWhatsappNumber(),
-                a.getFollowUpOfAppointment() != null ? a.getFollowUpOfAppointment().getId():null,
+                a.getFollowUpOfAppointment() != null ? a.getFollowUpOfAppointment().getId() : null,
                 a.getSuggestedFollowUpDate()
         );
     }
@@ -622,23 +628,18 @@ public class AppointmentAdminService {
 
         boolean valid = switch (current) {
 
-            case CONFIRMED ->
-                    next == AppointmentStatus.CHECKED_IN
-                            || next == AppointmentStatus.CANCELLED
-                            || next == AppointmentStatus.NO_SHOW;
+            case CONFIRMED -> next == AppointmentStatus.CHECKED_IN
+                    || next == AppointmentStatus.CANCELLED
+                    || next == AppointmentStatus.NO_SHOW;
 
-            case CHECKED_IN ->
-                    next == AppointmentStatus.WAITING
-                            || next == AppointmentStatus.CANCELLED;
+            case CHECKED_IN -> next == AppointmentStatus.WAITING
+                    || next == AppointmentStatus.CANCELLED;
 
-            case WAITING ->
-                    next == AppointmentStatus.IN_PROGRESS;
+            case WAITING -> next == AppointmentStatus.IN_CONSULTATION;
 
-            case IN_PROGRESS ->
-                    next == AppointmentStatus.COMPLETED;
+            case IN_CONSULTATION -> next == AppointmentStatus.COMPLETED;
 
-            case COMPLETED, CANCELLED, NO_SHOW ->
-                    false;
+            case COMPLETED, CANCELLED, NO_SHOW -> false;
         };
 
         if (!valid) {
@@ -669,7 +670,7 @@ public class AppointmentAdminService {
         // ---------------------------------------------
 
         if (appointment.getStatus()
-                != AppointmentStatus.IN_PROGRESS) {
+                != AppointmentStatus.IN_CONSULTATION) {
 
             throw new IllegalArgumentException(
                     "Follow-up can only be suggested for a completed appointment."
@@ -709,6 +710,32 @@ public class AppointmentAdminService {
 //         );
 
         return toDto(savedAppointment);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AppointmentListItemDto> getPatientAppointments(
+            Long clinicId,
+            Long patientId,
+            int page,
+            int size) {
+
+        patientRepository.findByIdAndClinicId(patientId, clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException("Patient not found for this clinic."));
+
+        Pageable pageable = PageRequest.of(
+                page,
+                size
+        );
+
+        Page<Appointment> appointments =
+                appointmentRepository.findByClinicIdAndPatientIdOrderByAppointmentDateAscStartTimeAsc(
+                        clinicId,
+                        patientId,
+                        pageable
+                );
+
+        return appointments.map(this::toDto);
     }
 
 }

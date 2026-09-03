@@ -155,6 +155,7 @@ public class ServiceDashboardController {
                 );
     }
 
+    @Transactional
     @DeleteMapping("/{serviceId}")
     public ResponseEntity<ApiResponse<Void>> deleteService(
             @PathVariable Long clinicId,
@@ -166,10 +167,7 @@ public class ServiceDashboardController {
                         new NotFoundException("Service not found."));
 
         service.setActive(false);
-        // First remove doctor-service mappings
-        doctorServiceRepository.deleteByServiceId(serviceId);
-
-        serviceRepository.delete(service);
+        serviceRepository.save(service);
 
         // Evict service cache
         cacheManager.getCache("clinicServices").evict(clinicId);

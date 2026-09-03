@@ -250,7 +250,7 @@ public class AppointmentAdminController {
                 savedAppointment.getService().getName(),
                 savedAppointment.getPatient().getName(),
                 savedAppointment.getPatient().getWhatsappNumber(),
-                savedAppointment.getFollowUpOfAppointment() != null ? savedAppointment.getFollowUpOfAppointment().getFollowUpOfAppointment().getId():null, savedAppointment.getSuggestedFollowUpDate());
+                savedAppointment.getFollowUpOfAppointment() != null ? savedAppointment.getFollowUpOfAppointment().getId():null, savedAppointment.getSuggestedFollowUpDate());
 
     }
 
