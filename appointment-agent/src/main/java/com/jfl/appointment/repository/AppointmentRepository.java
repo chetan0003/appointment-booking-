@@ -167,4 +167,22 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             Long patientId,
             Pageable pageable
     );
+
+    @Query("""
+    SELECT a.appointmentDate, COUNT(a)
+    FROM Appointment a
+    WHERE a.clinic.id = :clinicId
+      AND a.appointmentDate BETWEEN :fromDate AND :toDate
+      AND a.status NOT IN (
+          com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
+          com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
+      )
+    GROUP BY a.appointmentDate
+    ORDER BY a.appointmentDate
+    """)
+    List<Object[]> countAppointmentsByDate(
+            @Param("clinicId") Long clinicId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
+    );
 }

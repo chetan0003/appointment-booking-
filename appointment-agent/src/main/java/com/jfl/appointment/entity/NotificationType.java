@@ -10,3 +10,4 @@ public enum NotificationType {
 
     FOLLOW_UP_SUGGESTED
 }
+

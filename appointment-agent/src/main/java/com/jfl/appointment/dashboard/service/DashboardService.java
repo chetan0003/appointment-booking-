@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
@@ -98,5 +99,7 @@ public class DashboardService {
                 appointment.getStatus().name()
         );
     }
+
+
 }
 

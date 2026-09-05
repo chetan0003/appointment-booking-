@@ -102,7 +102,8 @@ public class SecurityConfig {
                                 "/api/clinics/*/availability",
                                 "/api/sessions/**",
                                 "/api/appointments",
-                                "/api/n8n/**"
+                                "/api/n8n/**",
+                                "/api/dashboard/notifications/**"
                         ).permitAll()
 
                         .requestMatchers("/api/users/**")

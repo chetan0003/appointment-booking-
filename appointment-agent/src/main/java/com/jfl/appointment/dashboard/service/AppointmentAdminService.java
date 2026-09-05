@@ -17,11 +17,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.time.format.TextStyle;
+import java.time.temporal.TemporalAdjusters;
+import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Slf4j
 @Service
@@ -38,6 +41,7 @@ public class AppointmentAdminService {
     private final DoctorServiceRepository doctorServiceRepository;
     private final NotificationService notificationService;
     private final AvailabilityService availabilityService;
+    private final NotificationSchedulingService notificationSchedulingService;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
@@ -242,9 +246,19 @@ public class AppointmentAdminService {
         // 10. Create booking notification
         // =====================================================
 
-         notificationService.createBookingConfirmation(
-                 savedAppointment
-         );
+//         notificationService.createBookingConfirmation(
+//                 savedAppointment
+//         );
+
+        // Move the reminder to the new time (or create one if it already fired
+        // before this reschedule happened) - see NotificationSchedulingService.
+        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
+
+        // This method is the STAFF/dashboard reschedule path - the patient isn't
+        // mid-conversation, so they need an async template notice, not a direct reply.
+        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+
+        notificationSchedulingService.scheduleBookingReminder(savedAppointment);
 
         return toDto(savedAppointment);
     }
@@ -440,6 +454,14 @@ public class AppointmentAdminService {
         //         savedAppointment
         // );
 
+        // Move the reminder to the new time (or create one if it already fired
+        // before this reschedule happened) - see NotificationSchedulingService.
+        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
+
+        // This method is the STAFF/dashboard reschedule path - the patient isn't
+        // mid-conversation, so they need an async template notice, not a direct reply.
+        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+
         return toDto(savedAppointment);
     }
 
@@ -600,6 +622,14 @@ public class AppointmentAdminService {
         //         oldEnd
         // );
 
+        // Move the reminder to the new time (or create one if it already fired
+        // before this reschedule happened) - see NotificationSchedulingService.
+        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
+
+        // This method is the STAFF/dashboard reschedule path - the patient isn't
+        // mid-conversation, so they need an async template notice, not a direct reply.
+        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+
         return toDto(savedAppointment);
     }
 
@@ -709,6 +739,10 @@ public class AppointmentAdminService {
 //                 savedAppointment
 //         );
 
+        if (request.suggestedFollowUpDate() != null) {
+            notificationSchedulingService.scheduleFollowUpSuggestion(appointment, request.suggestedFollowUpDate());
+        }
+
         return toDto(savedAppointment);
     }
 
@@ -736,6 +770,61 @@ public class AppointmentAdminService {
                 );
 
         return appointments.map(this::toDto);
+    }
+
+    @Transactional(readOnly = true)
+    public List<WeeklyAppointmentDto> getAppointmentsThisWeek(
+            Long clinicId) {
+
+        LocalDate today = LocalDate.now();
+
+        LocalDate startOfWeek =
+                today.with(
+                        TemporalAdjusters.previousOrSame(
+                                DayOfWeek.MONDAY
+                        )
+                );
+
+        LocalDate endOfWeek =
+                startOfWeek.plusDays(6);
+
+        List<Object[]> results =
+                appointmentRepository.countAppointmentsByDate(
+                        clinicId,
+                        startOfWeek,
+                        endOfWeek
+                );
+
+        Map<LocalDate, Long> appointmentCountMap =
+                results.stream()
+                        .collect(Collectors.toMap(
+                                row -> (LocalDate) row[0],
+                                row -> (Long) row[1]
+                        ));
+
+        return IntStream.range(0, 7)
+                .mapToObj(i -> {
+
+                    LocalDate date =
+                            startOfWeek.plusDays(i);
+
+                    return new WeeklyAppointmentDto(
+                            date.getDayOfWeek()
+                                    .getDisplayName(
+                                            TextStyle.SHORT,
+                                            Locale.ENGLISH
+                                    )
+                                    .toUpperCase(),
+
+                            date,
+
+                            appointmentCountMap.getOrDefault(
+                                    date,
+                                    0L
+                            )
+                    );
+                })
+                .toList();
     }
 
 }
