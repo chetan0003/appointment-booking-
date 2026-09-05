@@ -6,6 +6,7 @@ import com.jfl.appointment.exception.SlotUnavailableException;
 import com.jfl.appointment.n8n.dto.AppointmentResponse;
 import com.jfl.appointment.n8n.dto.CreateAppointmentRequest;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.IntegrationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -93,7 +94,7 @@ public class AppointmentService {
         patient.setName(request.patientName());
 
         Appointment appointment = new Appointment();
-        appointment.setAppointmentCode(generateAppointmentCode(request.idempotencyKey()));
+        appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
         appointment.setClinic(clinic);
         appointment.setDoctor(doctor);
         appointment.setService(service);
@@ -112,13 +113,6 @@ public class AppointmentService {
         }
 
         return toResponse(saved);
-    }
-
-    private String generateAppointmentCode(String idempotencyKey) {
-        if (idempotencyKey != null) {
-            return "IDEMP-" + idempotencyKey;
-        }
-        return "APT-" + System.currentTimeMillis() % 1_000_000 + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
     }
 
     private AppointmentResponse toResponse(Appointment a) {

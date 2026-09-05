@@ -1,5 +1,7 @@
 package com.jfl.appointment.dashboard.dto;
 
+import java.util.List;
+
 public record UserResponse(
 
         Long id,
@@ -7,7 +9,12 @@ public record UserResponse(
         String email,
         String firstName,
         String lastName,
+
+        String role,
         String phone,
-        boolean enabled
+        boolean enabled,
+
+        Long doctorId,
+        List<ClinicResponse> clinic
 
 ) {}

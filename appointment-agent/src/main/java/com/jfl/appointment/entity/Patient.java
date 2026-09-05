@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Entity
 @Table(name = "patient")
 @Getter
@@ -23,4 +25,10 @@ public class Patient {
 
     @Column(name = "whatsapp_number", nullable = false)
     private String whatsappNumber;
+
+    @Column(name = "email")
+    private String email;
+
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
 }

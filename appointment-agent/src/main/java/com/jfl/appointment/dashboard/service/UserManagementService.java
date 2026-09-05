@@ -1,15 +1,21 @@
 package com.jfl.appointment.dashboard.service;
 
 
+import com.jfl.appointment.dashboard.dto.ClinicResponse;
+import com.jfl.appointment.dashboard.dto.ClinicUserDto;
 import com.jfl.appointment.dashboard.dto.CreateUserRequest;
+import com.jfl.appointment.dashboard.dto.UserResponse;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
-
 import org.springframework.security.crypto.password.PasswordEncoder;
-
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +32,9 @@ public class UserManagementService {
     private final DoctorRepository doctorRepository;
 
     private final PasswordEncoder passwordEncoder;
+
+    private final SecurityContextService securityContextService;
+    private final AppUserRepository appUserRepository;
 
     @Transactional
     public AppUser createUser(
@@ -124,5 +133,45 @@ public class UserManagementService {
         clinicUserRepository.save(clinicUser);
 
         return user;
+    }
+
+    public List<ClinicUserDto> getClinicUsersByClientId(Long clinicId) {
+        return clinicUserRepository.findByClientId(clinicId).stream().map(this::toDto)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse getUserDetail(String userName) {
+        AppUser appUser = appUserRepository.findByUsername(userName).get();
+        if (appUser.getRoles().stream()
+                .anyMatch(role -> RoleName.SUPER_ADMIN.equals(role.getName()))) {
+            List<Clinic> all = clinicRepository.findAll();
+            return toDto(appUser, all, null);
+        }
+        Long doctorId = null;
+        Optional<ClinicUser> byUserId = clinicUserRepository.findByUserIdWithClinic(appUser.getId());
+        if (appUser.getRoles().stream()
+                .anyMatch(role -> RoleName.DOCTOR.equals(role.getName()))) {
+            doctorId = byUserId.get().getDoctor().getId();
+        }
+        Clinic clinic = byUserId.get().getClinic();
+        return toDto(appUser, Arrays.asList(clinic), doctorId);
+    }
+
+    private ClinicUserDto toDto(ClinicUser s) {
+        return new ClinicUserDto(s.getId(), s.getUser().getFirstName(), s.getUser().getEmail(), s.getUser().getRoles().stream().findFirst().get().getName().name(), s.getUser().isEnabled(), "Today");
+    }
+
+    private UserResponse toDto(AppUser appUser, List<Clinic> clinicList, Long doctorId) {
+        return new UserResponse(appUser.getId(), appUser.getUsername(), appUser.getEmail(),
+                appUser.getFirstName(), appUser.getLastName(),
+                appUser.getRoles().stream().findFirst().get().getName().name(), appUser.getPhone(), appUser.isEnabled(), doctorId, setClinicResponse(clinicList));
+    }
+
+    private List<ClinicResponse> setClinicResponse(List<Clinic> clinicList) {
+        return clinicList.stream()
+                .map(o -> {
+                    return new ClinicResponse(o.getId(), o.getName(), o.getWhatsappNumber(), o.getTimezone(), o.isActive(), o.getCreatedAt());
+                }).toList();
     }
 }

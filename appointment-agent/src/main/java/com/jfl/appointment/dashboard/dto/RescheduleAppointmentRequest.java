@@ -7,5 +7,7 @@ import java.time.LocalTime;
 
 public record RescheduleAppointmentRequest(
         @NotNull LocalDate appointmentDate,
-        @NotNull LocalTime startTime
+        @NotNull LocalTime startTime,
+        @NotNull LocalTime endTime,
+        String reason
 ) {}

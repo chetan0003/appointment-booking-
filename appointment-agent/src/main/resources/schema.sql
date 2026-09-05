@@ -261,3 +261,229 @@ FROM app_user u
 JOIN role r
     ON r.name = 'SUPER_ADMIN'
 WHERE u.username = 'chetan03';
+
+
+CREATE TABLE doctor_availability (
+    id BIGSERIAL PRIMARY KEY,
+
+    doctor_id BIGINT NOT NULL,
+
+    day_of_week VARCHAR(20) NOT NULL,
+
+    start_time TIME NOT NULL,
+
+    end_time TIME NOT NULL,
+
+    break_start_time TIME,
+
+    break_end_time TIME,
+
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    CONSTRAINT fk_doctor_availability_doctor
+        FOREIGN KEY (doctor_id)
+        REFERENCES doctor(id),
+
+    CONSTRAINT chk_doctor_availability_day
+        CHECK (
+            day_of_week IN (
+                'MONDAY',
+                'TUESDAY',
+                'WEDNESDAY',
+                'THURSDAY',
+                'FRIDAY',
+                'SATURDAY',
+                'SUNDAY'
+            )
+        ),
+
+    CONSTRAINT chk_doctor_availability_time
+        CHECK (start_time < end_time),
+
+    CONSTRAINT chk_doctor_availability_break
+        CHECK (
+            break_start_time IS NULL
+            OR break_end_time IS NULL
+            OR break_start_time < break_end_time
+        )
+);
+
+CREATE INDEX idx_doctor_availability_doctor_day
+ON doctor_availability (
+    doctor_id,
+    day_of_week,
+    active
+);
+
+CREATE UNIQUE INDEX uk_doctor_availability_doctor_day
+ON doctor_availability (
+    doctor_id,
+    day_of_week
+)
+WHERE active = TRUE;
+
+
+CREATE TABLE doctor_leaves (
+    id BIGSERIAL PRIMARY KEY,
+
+    doctor_id BIGINT NOT NULL,
+
+    leave_date DATE NOT NULL,
+
+    start_time TIME,
+
+    end_time TIME,
+
+    reason VARCHAR(500),
+
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_doctor_leaves_doctor
+        FOREIGN KEY (doctor_id)
+        REFERENCES doctor(id),
+
+    CONSTRAINT chk_doctor_leave_time
+        CHECK (
+            start_time IS NULL
+            OR end_time IS NULL
+            OR start_time < end_time
+        )
+);
+
+CREATE INDEX idx_doctor_leaves_doctor_date
+ON doctor_leaves (
+    doctor_id,
+    leave_date,
+    active
+);
+
+
+CREATE TABLE clinic_holidays (
+    id BIGSERIAL PRIMARY KEY,
+
+    clinic_id BIGINT NOT NULL,
+
+    holiday_date DATE NOT NULL,
+
+    name VARCHAR(255) NOT NULL,
+
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_clinic_holidays_clinic
+        FOREIGN KEY (clinic_id)
+        REFERENCES clinic(id),
+
+    CONSTRAINT uk_clinic_holiday
+        UNIQUE (
+            clinic_id,
+            holiday_date
+        )
+);
+
+CREATE INDEX idx_clinic_holidays_clinic_date
+ON clinic_holidays (
+    clinic_id,
+    holiday_date,
+    active
+);
+
+--doc service table modify
+ALTER TABLE doctor_service
+DROP CONSTRAINT doctor_service_pkey;
+
+ALTER TABLE doctor_service
+ADD COLUMN id BIGSERIAL;
+
+ALTER TABLE doctor_service
+ADD CONSTRAINT pk_doctor_service
+PRIMARY KEY (id);
+
+
+CREATE TABLE notification (
+
+    id BIGSERIAL PRIMARY KEY,
+
+    appointment_id BIGINT NOT NULL,
+
+    type VARCHAR(30) NOT NULL,
+
+    channel VARCHAR(20) NOT NULL DEFAULT 'WHATSAPP',
+
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+
+    scheduled_at TIMESTAMP NOT NULL,
+
+    sent_at TIMESTAMP,
+
+    error_message VARCHAR(500),
+
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_notification_appointment
+        FOREIGN KEY (appointment_id)
+        REFERENCES appointment(id),
+
+    CONSTRAINT chk_notification_type
+        CHECK (
+            type IN (
+                'BOOKING_CONFIRMATION',
+                'REMINDER_24H',
+                'RESCHEDULED',
+                'FOLLOW_UP_SUGGESTED'
+            )
+        ),
+
+    CONSTRAINT chk_notification_channel
+        CHECK (
+            channel IN (
+                'WHATSAPP',
+                'SMS',
+                'EMAIL',
+                'PUSH'
+            )
+        ),
+
+    CONSTRAINT chk_notification_status
+        CHECK (
+            status IN (
+                'PENDING',
+                'SENT',
+                'FAILED'
+            )
+        )
+);
+
+CREATE UNIQUE INDEX uq_notification_appointment_type_channel
+    ON notification (
+        appointment_id,
+        type,
+        channel
+    );
+
+    ALTER TABLE appointment
+        ADD COLUMN follow_up_of_appointment_id BIGINT,
+        ADD COLUMN suggested_follow_up_date DATE;
+
+    ALTER TABLE appointment
+        ADD CONSTRAINT fk_appointment_follow_up_of
+            FOREIGN KEY (follow_up_of_appointment_id)
+            REFERENCES appointment(id);
+
+    CREATE INDEX idx_appointment_follow_up_of
+        ON appointment(follow_up_of_appointment_id);
+
+    CREATE INDEX idx_appointment_suggested_follow_up_date
+        ON appointment(suggested_follow_up_date);
+
+
+    ALTER TABLE patient
+    ADD COLUMN email VARCHAR(150);
+
+    ALTER TABLE patient
+    ADD COLUMN date_of_birth DATE;

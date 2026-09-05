@@ -1,0 +1,84 @@
+services:
+
+  postgres:
+    image: postgres:16
+    container_name: appointment-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: appointment
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - appointment-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d appointment"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  backend:
+    build: .
+    container_name: appointment-backend
+    restart: unless-stopped
+
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: appointment
+      DB_USERNAME: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"
+
+    networks:
+      - appointment-network
+
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: appointment-n8n
+    restart: unless-stopped
+
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+
+      SPRING_BOOT_BASE_URL: http://backend:8080
+
+    ports:
+      - "5678:5678"
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+    networks:
+      - appointment-network
+
+
+volumes:
+  postgres_data:
+  n8n_data:
+
+
+networks:
+  appointment-network:
+    driver: bridge
