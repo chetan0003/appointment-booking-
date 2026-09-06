@@ -1,15 +1,26 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/appointment_agent
+    url: jdbc:postgresql://postgres:5432/appointment
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:root}
+    hikari:
+      pool-name: AppointmentAgentPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000          # 5 min - close idle connections beyond minimum-idle
+      max-lifetime: 1800000         # 30 min - recycle connections before DB/infra kills them
+      connection-timeout: 30000     # 30 sec - fail fast if pool is exhausted
+      validation-timeout: 5000
+      leak-detection-threshold: 60000   # warn if a connection is held > 60s (dev/debug aid)
+      connection-test-query: SELECT 1
   jpa:
     hibernate:
-      ddl-auto: validate   # schema is owned by schema.sql / migrations, not Hibernate
+      ddl-auto: update   # schema is owned by schema.sql / migrations, not Hibernate
     open-in-view: false
     properties:
       hibernate:
         jdbc:
+          batch_size: 25             # optional: pairs well with pooling for bulk writes
 
   sql:
     init:
@@ -21,6 +32,7 @@ server:
 logging:
   level:
     com.jfl.appointment: DEBUG
+    com.zaxxer.hikari: INFO        # set to DEBUG temporarily if you need pool diagnostics
 
 security:
   jwt:

@@ -1,0 +1,1732 @@
+{
+  "name": "AI Appointment Booking - Phase 2 v9 (auto-skip single doctor)",
+  "nodes": [
+    {
+      "parameters": {
+        "public": true,
+        "options": {
+          "responseMode": "responseNodes"
+        }
+      },
+      "id": "a8bd50af-81ba-4711-835f-e0b872c09e53",
+      "name": "When Chat Message Received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -2304,
+        384
+      ],
+      "webhookId": "1a8bc75a-c1c5-473e-876d-270c9036aa3f"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "clinicId",
+              "name": "clinicId",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "whatsappNumber",
+              "name": "whatsappNumber",
+              "value": "+919876543210",
+              "type": "string"
+            },
+            {
+              "id": "messageText",
+              "name": "messageText",
+              "value": "={{$json.chatInput}}",
+              "type": "string"
+            },
+            {
+              "id": "waMessageId",
+              "name": "waMessageId",
+              "value": "={{$json.sessionId + ':' + $execution.id}}",
+              "type": "string"
+            },
+            {
+              "id": "contactName",
+              "name": "contactName",
+              "value": "Rahul Patil",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5fab9d2c-9549-4323-afdf-5f3c319242ff",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2096,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/sessions/active",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "whatsappNumber",
+              "value": "={{$('Edit Fields').first().json.whatsappNumber}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b979cedb-110e-4512-b12d-ea09872ceead",
+      "name": "Get Active Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1904,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "wait",
+              "leftValue": "={{$('Get Active Session').first().json.state}}",
+              "rightValue": "WAITING_FOR_SLOT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5622d2fb-0a50-4c22-9897-28ec554ba320",
+      "name": "Waiting For Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1680,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Get Active Session').first().json.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Get Active Session').first().json.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Get Active Session').first().json.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "aa37e491-f371-4cbe-873c-03e4612ac489",
+      "name": "Get Availability For Slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1440,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst input = $('Edit Fields').first().json;\nconst session = $('Get Active Session').first().json || {};\nconst availability = $json || {};\nconst slots = Array.isArray(availability.slots) ? availability.slots : [];\nconst message = String(input.messageText || '').trim();\n\nfunction normalizeTime(value) {\n  if (value === null || value === undefined) return null;\n\n  const s = String(value).trim().toUpperCase().replace(/\\s+/g, ' ');\n\n  let m = s.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h < 0 || h > 23 || min > 59) return null;\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  m = s.match(/^(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM)$/);\n  if (m) {\n    let h = Number(m[1]);\n    const min = Number(m[2] || 0);\n    const period = m[3];\n\n    if (h < 1 || h > 12 || min > 59) return null;\n\n    if (period === 'AM' && h === 12) h = 0;\n    if (period === 'PM' && h !== 12) h += 12;\n\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  // Defensive handling of inputs such as \"18:00 PM\".\n  m = s.match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/);\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h >= 0 && h <= 23 && min <= 59) {\n      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n    }\n  }\n\n  return null;\n}\n\nfunction displayTime(hhmm) {\n  const [hRaw, mRaw] = String(hhmm).slice(0, 5).split(':').map(Number);\n  const suffix = hRaw >= 12 ? 'PM' : 'AM';\n  const hour = hRaw % 12 || 12;\n  return `${hour}:${String(mRaw).padStart(2, '0')} ${suffix}`;\n}\n\nconst uniqueSlots = [\n  ...new Set(\n    slots\n      .map(normalizeTime)\n      .filter(Boolean)\n  )\n];\n\n// ------------------------------------------------------------\n// No slots are available for this date.\n// ------------------------------------------------------------\nif (uniqueSlots.length === 0) {\n  return [{\n    json: {\n      kind: \"NO_SLOTS\",\n      selectedStartTime: null,\n      shouldBook: false,\n      reply_to_patient:\n        `Sorry, there are no available slots on ${session.appointmentDate}. ` +\n        `Would you like to choose another date?`,\n      session_updates: {\n        sessionId: session.sessionId,\n        clinicId: session.clinicId,\n        whatsappNumber: session.whatsappNumber,\n        intent: session.intent ?? \"BOOK_APPOINTMENT\",\n        serviceId: session.serviceId ?? null,\n        doctorId: session.doctorId ?? null,\n        appointmentDate: session.appointmentDate ?? null,\n        selectedStartTime: null,\n        patientName: session.patientName ?? null,\n        state: \"COLLECTING_DATE\"\n      }\n    }\n  }];\n}\n\nlet selectedStartTime = null;\n\n// Number selection: \"1\", \"2\", ...\nif (/^\\d+$/.test(message)) {\n  const n = Number(message);\n  if (n >= 1 && n <= uniqueSlots.length) {\n    selectedStartTime = uniqueSlots[n - 1];\n  }\n}\n\n// Time selection: \"18:00\", \"6 PM\", \"6:00 PM\", etc.\nif (!selectedStartTime) {\n  const normalizedMessage = normalizeTime(message);\n  if (normalizedMessage && uniqueSlots.includes(normalizedMessage)) {\n    selectedStartTime = normalizedMessage;\n  }\n}\n\n// Invalid selection.\nif (!selectedStartTime) {\n  return [{\n    json: {\n      kind: \"INVALID_SLOT\",\n      selectedStartTime: null,\n      shouldBook: false,\n      reply_to_patient:\n        `Please choose one of the available slots:\\n\\n` +\n        uniqueSlots.map((slot, i) => `${i + 1}. ${displayTime(slot)}`).join('\\n'),\n      session_updates: {\n        sessionId: session.sessionId,\n        clinicId: session.clinicId,\n        whatsappNumber: session.whatsappNumber,\n        intent: session.intent ?? \"BOOK_APPOINTMENT\",\n        serviceId: session.serviceId ?? null,\n        doctorId: session.doctorId ?? null,\n        appointmentDate: session.appointmentDate ?? null,\n        selectedStartTime: null,\n        patientName: session.patientName ?? null,\n        state: \"WAITING_FOR_SLOT\"\n      },\n      availableSlots: uniqueSlots\n    }\n  }];\n}\n\nconst patientName = String(session.patientName || '').trim() || null;\n\n// Valid slot and name already exists.\nif (patientName) {\n  return [{\n    json: {\n      kind: \"BOOK\",\n      selectedStartTime,\n      patientName,\n      shouldBook: true,\n      reply_to_patient:\n        `Great. I have selected ${displayTime(selectedStartTime)}. I will proceed with the booking.`,\n      session_updates: {\n        sessionId: session.sessionId,\n        clinicId: session.clinicId,\n        whatsappNumber: session.whatsappNumber,\n        intent: session.intent ?? \"BOOK_APPOINTMENT\",\n        serviceId: session.serviceId ?? null,\n        doctorId: session.doctorId ?? null,\n        appointmentDate: session.appointmentDate ?? null,\n        selectedStartTime,\n        patientName,\n        state: \"READY_TO_BOOK\"\n      }\n    }\n  }];\n}\n\n// Valid slot but name missing.\nreturn [{\n  json: {\n    kind: \"COLLECT_NAME\",\n    selectedStartTime,\n    patientName: null,\n    shouldBook: false,\n    reply_to_patient:\n      `Great. ${displayTime(selectedStartTime)} is available. What is the patient's name?`,\n    session_updates: {\n      sessionId: session.sessionId,\n      clinicId: session.clinicId,\n      whatsappNumber: session.whatsappNumber,\n      intent: session.intent ?? \"BOOK_APPOINTMENT\",\n      serviceId: session.serviceId ?? null,\n      doctorId: session.doctorId ?? null,\n      appointmentDate: session.appointmentDate ?? null,\n      selectedStartTime,\n      patientName: null,\n      state: \"COLLECTING_NAME\"\n    }\n  }\n}];\n"
+      },
+      "id": "f6673e6b-8bdf-4368-8a2e-abb1654df3eb",
+      "name": "Handle Slot Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "book",
+              "leftValue": "={{$('Handle Slot Selection').first().json.shouldBook}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "35808a1d-70fd-487b-8dd5-2d1562ac7936",
+      "name": "Has Name After Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clinicId: $('Edit Fields').first().json.clinicId, doctorId: $('Get Active Session').first().json.doctorId, serviceId: $('Get Active Session').first().json.serviceId, patientName: $('Get Active Session').first().json.patientName, whatsappNumber: $('Edit Fields').first().json.whatsappNumber, appointmentDate: $('Get Active Session').first().json.appointmentDate, startTime: ($('Handle Slot Selection').first().json.selectedStartTime || '').split(':').slice(0,2).join(':') + ':00', idempotencyKey: $('Edit Fields').first().json.waMessageId, sessionId: $('Get Active Session').first().json.sessionId } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "c1f9e7f8-8d93-4bd9-9ee2-90bb9a5523e4",
+      "name": "Create Appointment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst r = $json || {};\n\nconst statusCode = Number(\n  r.statusCode ??\n  r.status ??\n  0\n);\n\nconst body =\n  r.body && typeof r.body === 'object'\n    ? r.body\n    : r;\n\nconst success =\n  (statusCode >= 200 && statusCode < 300) ||\n  body?.appointmentId != null ||\n  body?.id != null ||\n  [\"CONFIRMED\", \"BOOKED\", \"SUCCESS\", \"CREATED\"]\n    .includes(String(body?.status || body?.appointmentStatus || '').toUpperCase());\n\nconst conflict =\n  statusCode === 409 ||\n  String(body?.code || body?.errorCode || '').toUpperCase() === 'SLOT_UNAVAILABLE';\n\nconst appointmentId = body?.appointmentId ?? body?.id ?? null;\nconst s = $('Get Active Session').first().json;\nconst time = $('Handle Slot Selection').first().json.selectedStartTime;\n\nreturn [{\n  json: {\n    success,\n    conflict,\n    statusCode,\n    appointmentId,\n    time,\n    date: s.appointmentDate,\n    reply_to_patient:\n      success\n        ? `Your appointment has been booked successfully for ${s.appointmentDate} at ${time}.${appointmentId ? ` Appointment ID: ${appointmentId}.` : ''}`\n        : conflict\n          ? `Sorry, the ${time} slot was just booked by another patient. Let me check the remaining slots.`\n          : `Sorry, I could not book the appointment for ${s.appointmentDate} at ${time}. Please try again.`\n  }\n}];\n"
+      },
+      "id": "535c3a63-67c2-4812-8da0-f3d26f7b8198",
+      "name": "Process Booking Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Get Active Session').first().json.serviceId, doctorId: $('Get Active Session').first().json.doctorId, appointmentDate: $('Get Active Session').first().json.appointmentDate, selectedStartTime: $('Handle Slot Selection').first().json.selectedStartTime, patientName: $('Get Active Session').first().json.patientName || $('Edit Fields').first().json.contactName, state: $('Process Booking Response').first().json.success ? 'BOOKED' : 'WAITING_FOR_SLOT' } }}",
+        "options": {}
+      },
+      "id": "0d303f01-7bf5-469e-b4ff-c8b097d3a45d",
+      "name": "Update Booked Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Process Booking Response').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "5073439b-cc2a-464c-ba4a-6e8c08018bf4",
+      "name": "Respond Booking",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -16,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Get Active Session').first().json.serviceId, doctorId: $('Get Active Session').first().json.doctorId, appointmentDate: $('Get Active Session').first().json.appointmentDate, selectedStartTime: $('Handle Slot Selection').first().json.selectedStartTime || null, patientName: $('Get Active Session').first().json.patientName, state: $('Handle Slot Selection').first().json.kind === 'COLLECT_NAME' ? 'COLLECTING_NAME' : $('Handle Slot Selection').first().json.session_updates.state } }}",
+        "options": {}
+      },
+      "id": "da1b5897-13f2-43bf-9f94-c512e19a005f",
+      "name": "Update Selected Slot State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -720,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$('Handle Slot Selection').first().json.selectedStartTime}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "de20ef50-5891-48d3-bb01-35cece7ba620",
+      "name": "Slot Selected Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -960,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Handle Slot Selection').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "f3217c3d-0d8d-4942-98cd-b7a6ba1c14fe",
+      "name": "Respond Slot Prompt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -720,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "name",
+              "leftValue": "={{$('Get Active Session').first().json.state}}",
+              "rightValue": "COLLECTING_NAME",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "93c31c5b-eb9e-4ab9-b07c-3777c975941e",
+      "name": "Collecting Name?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1440,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$('Edit Fields').first().json; const s=$('Get Active Session').first().json;\nconst name=String(input.messageText||'').trim();\nreturn [{json:{patientName:name,session:s}}];"
+      },
+      "id": "644789be-3073-4ba3-99cc-69cfd8b59015",
+      "name": "Set Patient Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clinicId: $('Edit Fields').first().json.clinicId, doctorId: $('Get Active Session').first().json.doctorId, serviceId: $('Get Active Session').first().json.serviceId, patientName: $('Set Patient Name').first().json.patientName, whatsappNumber: $('Edit Fields').first().json.whatsappNumber, appointmentDate: $('Get Active Session').first().json.appointmentDate, startTime: ($('Get Active Session').first().json.selectedStartTime || '').split(':').slice(0,2).join(':') + ':00', idempotencyKey: $('Edit Fields').first().json.waMessageId, sessionId: $('Get Active Session').first().json.sessionId } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "0681d324-f675-4674-bd3c-04f5a10239fa",
+      "name": "Create Appointment From Name",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst r = $json || {};\n\nconst statusCode = Number(\n  r.statusCode ??\n  r.status ??\n  0\n);\n\nconst body =\n  r.body && typeof r.body === 'object'\n    ? r.body\n    : r;\n\nconst success =\n  (statusCode >= 200 && statusCode < 300) ||\n  body?.appointmentId != null ||\n  body?.id != null ||\n  [\"CONFIRMED\", \"BOOKED\", \"SUCCESS\", \"CREATED\"]\n    .includes(String(body?.status || body?.appointmentStatus || '').toUpperCase());\n\nconst conflict =\n  statusCode === 409 ||\n  String(body?.code || body?.errorCode || '').toUpperCase() === 'SLOT_UNAVAILABLE';\n\nconst appointmentId = body?.appointmentId ?? body?.id ?? null;\nconst s = $('Get Active Session').first().json;\nconst name = $('Set Patient Name').first().json.patientName;\n\nreturn [{\n  json: {\n    success,\n    conflict,\n    statusCode,\n    appointmentId,\n    name,\n    reply_to_patient:\n      success\n        ? `Your appointment has been booked successfully for ${s.appointmentDate} at ${s.selectedStartTime}.${appointmentId ? ` Appointment ID: ${appointmentId}.` : ''}`\n        : conflict\n          ? `Sorry, the ${s.selectedStartTime} slot was just booked by another patient. Let me check the remaining slots.`\n          : `Sorry, I could not complete the booking. Please try another slot.`\n  }\n}];\n"
+      },
+      "id": "105b9006-7389-447f-9cc7-6d2ac23d063b",
+      "name": "Process Name Booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Get Active Session').first().json.serviceId, doctorId: $('Get Active Session').first().json.doctorId, appointmentDate: $('Get Active Session').first().json.appointmentDate, selectedStartTime: $('Get Active Session').first().json.selectedStartTime, patientName: $('Set Patient Name').first().json.patientName, state: $('Process Name Booking').first().json.success ? 'BOOKED' : 'WAITING_FOR_SLOT' } }}",
+        "options": {}
+      },
+      "id": "fdf10131-058d-40b6-8a26-8b1cb3ce2ded",
+      "name": "Update Name Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Process Name Booking').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "03c568a5-32ce-45f0-91f2-5ce71969f561",
+      "name": "Respond Name Booking",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -240,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "service",
+              "leftValue": "={{$('Get Active Session').first().json.state}}",
+              "rightValue": "STARTED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "service2",
+              "leftValue": "={{$('Get Active Session').first().json.state}}",
+              "rightValue": "COLLECTING_SERVICE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "57574aed-b919-45d1-9caf-0e3faf2236cc",
+      "name": "Collecting Service?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1200,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/services",
+        "options": {}
+      },
+      "id": "16757a82-32e6-432d-ad6e-f70251d977be",
+      "name": "Get Services",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$('Edit Fields').first().json;\nconst session=$('Get Active Session').first().json||{};\nlet services=[]; let doctors=[];\ntry{services=$('Get Services').all().map(i=>({id:i.json.id,name:i.json.name}));}catch(e){}\ntry{doctors=$('Get Doctors For Service').all().map(i=>({id:i.json.id,name:i.json.name}));}catch(e){}\nconst prompt=`Extract the patient's appointment selection. Return ONLY JSON.\nAllowed type: SERVICE, DOCTOR, DATE, UNKNOWN.\nRules:\n- Match SERVICE/DOCTOR only to supplied options.\n- Convert dates to YYYY-MM-DD.\n- For relative dates use currentDateTime Asia/Kolkata.\n- Do not invent values.\nOutput exactly: {\"type\":\"SERVICE|DOCTOR|DATE|UNKNOWN\",\"value\":\"string or null\"}`;\nconst user=JSON.stringify({state:session.state,patientMessage:input.messageText,currentDateTime:new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}),services,doctors},null,2);\nreturn [{json:{systemPrompt:prompt,userPrompt:user}}];"
+      },
+      "id": "d5e2741e-4fd2-4312-838a-b468ab201c93",
+      "name": "Build AI Parser Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{$vars.GEMINI_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{\nJSON.stringify({\n  systemInstruction: {\n    parts: [\n      {\n        text: $json.systemPrompt\n      }\n    ]\n  },\n  contents: [\n    {\n      role: \"user\",\n      parts: [\n        {\n          text: $json.userPrompt\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    responseMimeType: \"application/json\",\n    maxOutputTokens: 4096,\n    temperature: 0.2\n  }\n})\n}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "8aae9fd0-a72d-4666-ac20-47b4c3c7ac8b",
+      "name": "Call Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        784
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const r=$json; const text=r?.candidates?.[0]?.content?.parts?.[0]?.text||'';\nlet parsed; try{parsed=JSON.parse(text)}catch(e){parsed={type:'UNKNOWN',value:null}};\nreturn [{json:parsed}];"
+      },
+      "id": "69d679a0-1498-45d6-b941-518d5b1dbfdd",
+      "name": "Parse AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/doctors",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "serviceId",
+              "value": "={{$('Get Active Session').first().json.serviceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6032b9e3-fd43-46b0-96f3-8436e7bc1815",
+      "name": "Get Doctors For Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -960,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "doctor",
+              "leftValue": "={{$('Get Active Session').first().json.state}}",
+              "rightValue": "COLLECTING_DOCTOR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "47d5ca85-a2b3-4582-91c8-41129068a92f",
+      "name": "Collecting Doctor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1200,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai=$('Parse AI').first().json||{}; const s=$('Get Active Session').first().json||{}; const input=$('Edit Fields').first().json;\nlet services=[]; let doctors=[];\ntry{services=$('Get Services').all().map(i=>i.json)}catch(e){}\ntry{doctors=$('Get Doctors For Service').all().map(i=>i.json)}catch(e){}\nconst type=String(ai.type||'UNKNOWN').toUpperCase(); const value=String(ai.value||'').trim();\nlet serviceId=s.serviceId??null, doctorId=s.doctorId??null, date=s.appointmentDate??null, state=s.state, reply='', action='NONE';\n\nif(s.state==='STARTED'||s.state==='COLLECTING_SERVICE'){\n const m=value.toLowerCase();\n const match=services.find(x=>String(x.name).toLowerCase()===m);\n if(type==='SERVICE'&&match){serviceId=match.id; doctorId=null; date=null; state='COLLECTING_DOCTOR'; reply=`Great! You selected ${match.name}. Please choose a doctor.`;}\n else {state='COLLECTING_SERVICE'; reply=`Please choose a service:\\n\\n${services.map((x,i)=>`${i+1}. ${x.name}`).join('\\n')}`;}\n} else if(s.state==='COLLECTING_DOCTOR'){\n const m=value.toLowerCase().replace(/^dr\\.?\\s+/,'');\n const match=doctors.find(x=>String(x.name).toLowerCase().replace(/^dr\\.?\\s+/,'')===m);\n if(type==='DOCTOR'&&match){doctorId=match.id; date=null; state='COLLECTING_DATE'; reply=`Great! You've selected ${match.name}. What date would you like?`;}\n else {state='COLLECTING_DOCTOR'; reply=`Please choose a doctor:\\n\\n${doctors.map((x,i)=>`${i+1}. ${x.name}`).join('\\n')}`;}\n} else if(s.state==='COLLECTING_DATE'){\n if(type==='DATE'&&/^\\d{4}-\\d{2}-\\d{2}$/.test(value)){date=value; state='SHOWING_SLOTS'; action='CHECK_AVAILABILITY'; reply=`Thank you. Let me check available slots for ${date}.`;}\n else {state='COLLECTING_DATE'; reply='Please provide the appointment date, for example 26-08-2026.';}\n}\nreturn [{json:{serviceId,doctorId,appointmentDate:date,state,action,reply_to_patient:reply}}];"
+      },
+      "id": "2c1a7b00-1f26-492c-8743-2ffdf446dff5",
+      "name": "Process AI Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Process AI Selection').first().json.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Process AI Selection').first().json.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Process AI Selection').first().json.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "fa24233a-3f0f-4bd0-b2d6-ca95b8e42098",
+      "name": "Get Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a=$json||{}; const slots=Array.isArray(a.slots)?a.slots:[]; const date=a.date||$('Process AI Selection').first().json.appointmentDate;\nconst fmt=v=>{const [h,m]=String(v).split(':').map(Number);return `${h%12||12}:${String(m||0).padStart(2,'0')} ${h>=12?'PM':'AM'}`};\nreturn [{json:{slots,date,reply_to_patient:slots.length?`Available slots for ${date}:\\n\\n${slots.map((s,i)=>`${i+1}. ${fmt(s)}`).join('\\n')}\\n\\nWhich time would you prefer?`:`Sorry, there are no available slots on ${date}. Would you like another date?`,state:slots.length?'WAITING_FOR_SLOT':'COLLECTING_DATE'}}];"
+      },
+      "id": "666d2178-1b2f-4d9d-be5e-0948efc05f8e",
+      "name": "Format Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Process AI Selection').first().json.serviceId, doctorId: $('Process AI Selection').first().json.doctorId, appointmentDate: $('Process AI Selection').first().json.appointmentDate, selectedStartTime: null, patientName: $('Get Active Session').first().json.patientName, state: $('Format Availability').first().json.state } }}",
+        "options": {}
+      },
+      "id": "eac78357-6111-4842-8e30-c0cfbd7c22a9",
+      "name": "Update Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Format Availability').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "fc2a007b-60d0-4c93-a632-07780761f743",
+      "name": "Respond With Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "=GET",
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/n8n/clinics/{{$('Edit Fields').first().json.clinicId}}/doctors",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "serviceId",
+              "value": "={{$('Process AI Selection').first().json.serviceId}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3154ce17-a099-4623-8019-ac20bf936365",
+      "name": "Get Doctors After Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const docs=$('Get Doctors After Service').all().map(i=>i.json);\nreturn [{json:{reply_to_patient:docs.length?`Great! Please choose a doctor:\\n\\n${docs.map((d,i)=>`${i+1}. ${d.name}${d.specialization?` (${d.specialization})`:''}`).join('\\n')}`:'Sorry, there are no doctors available for that service. Please choose another service.'}}];"
+      },
+      "id": "b0b59713-3bdb-4c95-8a03-7f30fb835a3a",
+      "name": "Format Doctor Options",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Format Doctor Options').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "7888e57d-3753-4aab-bd40-ce9708f42420",
+      "name": "Respond Doctor Options",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        224,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Process AI Selection').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "42e0787b-2604-4ba4-9774-f90d83fc227c",
+      "name": "Respond AI Selection",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -240,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "show",
+              "leftValue": "={{$('Process AI Selection').first().json.action}}",
+              "rightValue": "CHECK_AVAILABILITY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e541a2a-7247-4ebd-9c89-58a6c296a37c",
+      "name": "AI Needs Availability?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -480,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "doc",
+              "leftValue": "={{$('Process AI Selection').first().json.state}}",
+              "rightValue": "COLLECTING_DOCTOR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "138d15fd-d643-441a-9151-49a2c750cf49",
+      "name": "AI Selected Service?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        1376
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Process AI Selection').first().json.serviceId, doctorId: $('Process AI Selection').first().json.doctorId, appointmentDate: $('Process AI Selection').first().json.appointmentDate, selectedStartTime: null, patientName: $('Get Active Session').first().json.patientName, state: $('Process AI Selection').first().json.state } }}",
+        "options": {}
+      },
+      "id": "e013e4d2-da99-419d-b07b-ce25985b1fe7",
+      "name": "Update AI Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        1536
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8ee53172-38dd-4dad-a9d5-54c7ddde5bb3",
+              "leftValue": "={{$('Process Booking Response').first().json.conflict}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fafe179a-ea42-4b0e-8b43-acd50a7461ea",
+      "name": "Booking Slot Conflict?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5d554799-db91-4c71-bf38-7995e76e3dd0",
+              "leftValue": "={{$('Process Name Booking').first().json.conflict}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e47d7a21-4f51-459e-a523-26d6f8074f14",
+      "name": "Name Booking Slot Conflict?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -240,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL}}/api/clinics/{{$('Edit Fields').first().json.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Get Active Session').first().json.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Get Active Session').first().json.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Get Active Session').first().json.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6bdd4aaf-ef15-4c07-8924-7474a5513f78",
+      "name": "Refresh Availability After Conflict",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst a = $json || {};\nconst slots = Array.isArray(a.slots) ? a.slots : [];\nconst session = $('Get Active Session').first().json || {};\nconst date = a.date || session.appointmentDate;\n\nfunction normalizeTime(value) {\n  const s = String(value ?? '').trim().toUpperCase();\n  let m = s.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);\n\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h < 0 || h > 23 || min > 59) return null;\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  m = s.match(/^(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM)$/);\n\n  if (m) {\n    let h = Number(m[1]);\n    const min = Number(m[2] || 0);\n    const period = m[3];\n\n    if (h < 1 || h > 12 || min > 59) return null;\n\n    if (period === 'AM' && h === 12) h = 0;\n    if (period === 'PM' && h !== 12) h += 12;\n\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  return null;\n}\n\nfunction displayTime(hhmm) {\n  const [h, m] = hhmm.split(':').map(Number);\n  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;\n}\n\nconst uniqueSlots = [...new Set(slots.map(normalizeTime).filter(Boolean))];\n\nif (uniqueSlots.length === 0) {\n  return [{\n    json: {\n      conflictResult: \"NO_SLOTS\",\n      state: \"COLLECTING_DATE\",\n      selectedStartTime: null,\n      reply_to_patient:\n        `Sorry, the selected slot was just booked by another patient, and there are no other available slots on ${date}. ` +\n        `Please choose another date.`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    conflictResult: \"SLOTS_REMAIN\",\n    state: \"WAITING_FOR_SLOT\",\n    selectedStartTime: null,\n    availableSlots: uniqueSlots,\n    reply_to_patient:\n      `Sorry, the selected slot was just booked by another patient.\\n\\n` +\n      `Remaining available slots for ${date}:\\n\\n` +\n      uniqueSlots.map((slot, i) => `${i + 1}. ${displayTime(slot)}`).join('\\n') +\n      `\\n\\nPlease choose another slot.`\n  }\n}];\n"
+      },
+      "id": "4c35aeb2-860b-44e5-bb20-a6842c7eca24",
+      "name": "Format Conflict Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Get Active Session').first().json.serviceId, doctorId: $('Get Active Session').first().json.doctorId, appointmentDate: $('Get Active Session').first().json.appointmentDate, selectedStartTime: $('Format Conflict Availability').first().json.selectedStartTime, patientName: $('Get Active Session').first().json.patientName, state: $('Format Conflict Availability').first().json.state } }}",
+        "options": {}
+      },
+      "id": "2f09b34e-2da8-4390-86d4-c3ff9137cfe6",
+      "name": "Update Session After Slot Conflict",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Format Conflict Availability').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "bf09ca9f-a723-402e-9c85-97c84986d1d0",
+      "name": "Respond Slot Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        960,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5e1e238e-f08a-4062-a48e-7872c84077da",
+              "leftValue": "={{$('Handle Slot Selection').first().json.kind}}",
+              "rightValue": "NO_SLOTS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "176ac1fe-ae85-4454-9721-58d56e89c83b",
+      "name": "No Slots From Availability?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Get Active Session').first().json.serviceId, doctorId: $('Get Active Session').first().json.doctorId, appointmentDate: $('Get Active Session').first().json.appointmentDate, selectedStartTime: null, patientName: $('Get Active Session').first().json.patientName, state: 'COLLECTING_DATE' } }}",
+        "options": {}
+      },
+      "id": "3577682c-b3fb-49e9-ada1-ff7210bc0cd6",
+      "name": "Update Session No Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Handle Slot Selection').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "fb20cf24-1e7c-4389-bd88-191753f7559a",
+      "name": "Respond No Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -240,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "onedoc",
+              "leftValue": "={{$('Get Doctors After Service').all().length}}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "80cbd86e-f043-467f-89cc-1076949d365a",
+      "name": "Only One Doctor?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        804
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Solo-provider clinics (or a niche service only one doctor offers) don't need\n// a 'choose a doctor' turn - nobody picks between one option. Auto-assign and\n// go straight to asking for a date, same as if the patient had picked manually.\nconst doctor = $('Get Doctors After Service').first().json;\nconst serviceId = $('Process AI Selection').first().json.serviceId;\nconst reply = `Great! You'll be seeing ${doctor.name}${doctor.specialization ? ` (${doctor.specialization})` : ''}. What date would you like?`;\nreturn [{ json: { serviceId, doctorId: doctor.id, appointmentDate: null, state: 'COLLECTING_DATE', reply_to_patient: reply } }];"
+      },
+      "id": "ed6699ee-accc-4c61-943f-b295e66aca84",
+      "name": "Auto Select Only Doctor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        804
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $vars.SPRING_BOOT_BASE_URL + '/api/n8n/sessions/' + $('Get Active Session').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Get Active Session').first().json.intent, serviceId: $('Auto Select Only Doctor').first().json.serviceId, doctorId: $('Auto Select Only Doctor').first().json.doctorId, appointmentDate: null, selectedStartTime: null, patientName: $('Get Active Session').first().json.patientName, state: $('Auto Select Only Doctor').first().json.state } }}",
+        "options": {}
+      },
+      "id": "4fbf5433-333c-42b6-ae8f-9ff197989d44",
+      "name": "Update Session After Auto Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        804
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { output: $('Auto Select Only Doctor').first().json.reply_to_patient } }}",
+        "options": {}
+      },
+      "id": "dc9d7284-b12b-4bbd-aa97-18d79a2d9d8a",
+      "name": "Respond Auto Doctor",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        660,
+        804
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Chat Message Received": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Get Active Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Session": {
+      "main": [
+        [
+          {
+            "node": "Waiting For Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Waiting For Slot?": {
+      "main": [
+        [
+          {
+            "node": "Get Availability For Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collecting Name?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability For Slot": {
+      "main": [
+        [
+          {
+            "node": "Handle Slot Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Slot Selection": {
+      "main": [
+        [
+          {
+            "node": "No Slots From Availability?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Selected Valid?": {
+      "main": [
+        [
+          {
+            "node": "Has Name After Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Slot Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Name After Slot?": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Selected Slot State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment": {
+      "main": [
+        [
+          {
+            "node": "Process Booking Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Booking Response": {
+      "main": [
+        [
+          {
+            "node": "Booking Slot Conflict?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Booked Session": {
+      "main": [
+        [
+          {
+            "node": "Respond Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Selected Slot State": {
+      "main": [
+        [
+          {
+            "node": "Respond Slot Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collecting Name?": {
+      "main": [
+        [
+          {
+            "node": "Set Patient Name",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collecting Service?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Patient Name": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment From Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment From Name": {
+      "main": [
+        [
+          {
+            "node": "Process Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Name Booking": {
+      "main": [
+        [
+          {
+            "node": "Name Booking Slot Conflict?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Name Booking": {
+      "main": [
+        [
+          {
+            "node": "Respond Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collecting Service?": {
+      "main": [
+        [
+          {
+            "node": "Get Services",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collecting Doctor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Services": {
+      "main": [
+        [
+          {
+            "node": "Build AI Parser Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collecting Doctor?": {
+      "main": [
+        [
+          {
+            "node": "Get Doctors For Service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build AI Parser Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Doctors For Service": {
+      "main": [
+        [
+          {
+            "node": "Build AI Parser Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Parser Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI": {
+      "main": [
+        [
+          {
+            "node": "Process AI Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Selection": {
+      "main": [
+        [
+          {
+            "node": "Update AI Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Needs Availability?": {
+      "main": [
+        [
+          {
+            "node": "Get Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Selected Service?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Selected Service?": {
+      "main": [
+        [
+          {
+            "node": "Get Doctors After Service",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond AI Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Doctors After Service": {
+      "main": [
+        [
+          {
+            "node": "Only One Doctor?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Doctor Options": {
+      "main": [
+        [
+          {
+            "node": "Respond Doctor Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability": {
+      "main": [
+        [
+          {
+            "node": "Format Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Availability": {
+      "main": [
+        [
+          {
+            "node": "Update Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session": {
+      "main": [
+        [
+          {
+            "node": "Respond With Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update AI Session": {
+      "main": [
+        [
+          {
+            "node": "AI Needs Availability?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Slots From Availability?": {
+      "main": [
+        [
+          {
+            "node": "Update Session No Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slot Selected Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session No Slots": {
+      "main": [
+        [
+          {
+            "node": "Respond No Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Slot Conflict?": {
+      "main": [
+        [
+          {
+            "node": "Refresh Availability After Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Booked Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Name Booking Slot Conflict?": {
+      "main": [
+        [
+          {
+            "node": "Refresh Availability After Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Availability After Conflict": {
+      "main": [
+        [
+          {
+            "node": "Format Conflict Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Conflict Availability": {
+      "main": [
+        [
+          {
+            "node": "Update Session After Slot Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session After Slot Conflict": {
+      "main": [
+        [
+          {
+            "node": "Respond Slot Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only One Doctor?": {
+      "main": [
+        [
+          {
+            "node": "Auto Select Only Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Doctor Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Select Only Doctor": {
+      "main": [
+        [
+          {
+            "node": "Update Session After Auto Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session After Auto Doctor": {
+      "main": [
+        [
+          {
+            "node": "Respond Auto Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "96368090-e333-4eb9-937d-3f4097ec5f42",
+  "meta": {
+    "instanceId": "84066156c805fd7eb394c047a3bc91b36dba34c548d5e4cf06dcb6ee7f245713"
+  },
+  "nodeGroups": [],
+  "id": "JwD3i3clpSpVEbfH",
+  "tags": []
+}
