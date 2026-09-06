@@ -285,21 +285,6 @@ public class AppointmentAdminController {
                 );
     }
 
-//    @PreAuthorize("""
-//                hasAnyRole(
-//                    'SUPER_ADMIN',
-//                    'CLINIC_ADMIN',
-//                    'STAFF',
-//                    'DOCTOR'
-//                )
-//            """)
-//    @PatchMapping("/api/appointments/{appointmentId}/reschedule")
-//    public AppointmentListItemDto rescheduleAppointment(
-//            @PathVariable Long appointmentId,
-//            @Valid @RequestBody RescheduleAppointmentRequest request) {
-//        return appointmentAdminService.rescheduleAppointment(
-//                appointmentId, request.appointmentDate(), request.startTime());
-//    }
 
     @Transactional
     @PreAuthorize("""

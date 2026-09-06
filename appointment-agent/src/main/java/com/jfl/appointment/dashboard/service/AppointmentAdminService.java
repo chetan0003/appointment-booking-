@@ -250,14 +250,6 @@ public class AppointmentAdminService {
 //                 savedAppointment
 //         );
 
-        // Move the reminder to the new time (or create one if it already fired
-        // before this reschedule happened) - see NotificationSchedulingService.
-        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
-
-        // This method is the STAFF/dashboard reschedule path - the patient isn't
-        // mid-conversation, so they need an async template notice, not a direct reply.
-        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
-
         notificationSchedulingService.scheduleBookingReminder(savedAppointment);
 
         return toDto(savedAppointment);
@@ -454,13 +446,7 @@ public class AppointmentAdminService {
         //         savedAppointment
         // );
 
-        // Move the reminder to the new time (or create one if it already fired
-        // before this reschedule happened) - see NotificationSchedulingService.
-        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
-
-        // This method is the STAFF/dashboard reschedule path - the patient isn't
-        // mid-conversation, so they need an async template notice, not a direct reply.
-        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+        notificationSchedulingService.scheduleBookingReminder(savedAppointment);
 
         return toDto(savedAppointment);
     }
@@ -622,13 +608,8 @@ public class AppointmentAdminService {
         //         oldEnd
         // );
 
-        // Move the reminder to the new time (or create one if it already fired
-        // before this reschedule happened) - see NotificationSchedulingService.
-        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
-
-        // This method is the STAFF/dashboard reschedule path - the patient isn't
-        // mid-conversation, so they need an async template notice, not a direct reply.
-        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+        notificationSchedulingService.rescheduleBookingReminder(appointment);
+        notificationSchedulingService.scheduleRescheduledNotice(appointment);
 
         return toDto(savedAppointment);
     }

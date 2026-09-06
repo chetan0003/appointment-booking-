@@ -487,3 +487,10 @@ CREATE UNIQUE INDEX uq_notification_appointment_type_channel
 
     ALTER TABLE patient
     ADD COLUMN date_of_birth DATE;
+
+
+    -- Adds DISPATCHING to the allowed status values, needed for the claim-pattern
+    -- fix (prevents overlapping 15-min dispatch runs from double-sending).
+    ALTER TABLE notification DROP CONSTRAINT chk_notification_status;
+    ALTER TABLE notification ADD CONSTRAINT chk_notification_status
+        CHECK (status IN ('PENDING', 'DISPATCHING', 'SENT', 'FAILED'));
