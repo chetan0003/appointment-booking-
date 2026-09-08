@@ -84,4 +84,10 @@ public interface NotificationRepository
             "where n.status = 'DISPATCHING' and n.channel = :channel " +
             "order by n.scheduledAt asc")
     List<Notification> findClaimed(@Param("channel") NotificationChannel channel);
+
+    Optional<Notification> findByAppointmentIdAndTypeAndChannel(
+            Long appointmentId,
+            NotificationType type,
+            NotificationChannel channel
+    );
 }

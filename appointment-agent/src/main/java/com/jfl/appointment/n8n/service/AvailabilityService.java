@@ -1,6 +1,6 @@
 package com.jfl.appointment.n8n.service;
 
-import com.jfl.appointment.SlotUtil;
+import com.jfl.appointment.util.SlotUtil;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.AvailabilityResponse;

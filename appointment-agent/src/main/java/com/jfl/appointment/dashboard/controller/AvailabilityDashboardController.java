@@ -30,7 +30,7 @@ public class AvailabilityDashboardController {
     public ResponseEntity<ApiResponse<AvailabilityResponse>> getAvailability(
             @PathVariable Long clinicId,
             @RequestParam Long doctorId,
-            @RequestParam Long serviceId,
+            @RequestParam(required = false) Long serviceId,
             @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate date) {

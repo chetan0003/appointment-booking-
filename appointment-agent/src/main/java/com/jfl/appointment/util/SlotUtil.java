@@ -1,4 +1,4 @@
-package com.jfl.appointment;
+package com.jfl.appointment.util;
 
 import java.time.LocalTime;
 

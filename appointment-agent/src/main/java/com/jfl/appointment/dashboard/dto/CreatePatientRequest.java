@@ -1,5 +1,6 @@
 package com.jfl.appointment.dashboard.dto;
 
+import com.jfl.appointment.entity.Gender;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -24,6 +25,8 @@ public record CreatePatientRequest(
         @Size(max = 150, message = "Email must not exceed 150 characters")
         String email,
 
-        LocalDate dateOfBirth
+        LocalDate dateOfBirth,
+
+        Gender gender
 ) {
 }
