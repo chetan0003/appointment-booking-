@@ -94,6 +94,7 @@ public class PatientService {
         patient.setDateOfBirth(
                 request.dateOfBirth()
         );
+        patient.setGender(request.gender());
         //patient.setActive(true);
 
         // =====================================================
@@ -192,7 +193,13 @@ public class PatientService {
     }
 
     private PatientResponseDto toDto(Patient patient) {
-        return new PatientResponseDto(patient.getId(),patient.getName(),patient.getWhatsappNumber(),patient.getEmail(),patient.getDateOfBirth(),patient.getClinic().getId());
+        return new PatientResponseDto(
+                patient.getId(),patient.getName(),
+                patient.getWhatsappNumber(),
+                patient.getEmail(),
+                patient.getDateOfBirth(),
+                patient.getClinic().getId(),
+                patient.getGender() != null ? patient.getGender().name() : null);
     }
 
 }

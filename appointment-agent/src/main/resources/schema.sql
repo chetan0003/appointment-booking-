@@ -494,3 +494,45 @@ CREATE UNIQUE INDEX uq_notification_appointment_type_channel
     ALTER TABLE notification DROP CONSTRAINT chk_notification_status;
     ALTER TABLE notification ADD CONSTRAINT chk_notification_status
         CHECK (status IN ('PENDING', 'DISPATCHING', 'SENT', 'FAILED'));
+
+
+
+    CREATE TABLE clinic_whatsapp_config (
+        id BIGSERIAL PRIMARY KEY,
+
+        clinic_id BIGINT NOT NULL,
+
+        phone_number_id VARCHAR(100) NOT NULL,
+
+        waba_id VARCHAR(100) NOT NULL,
+
+        business_account_id VARCHAR(100),
+
+        display_phone_number VARCHAR(30) NOT NULL,
+
+        access_token TEXT NOT NULL,
+
+        status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+        CONSTRAINT fk_clinic_whatsapp_config_clinic
+            FOREIGN KEY (clinic_id)
+            REFERENCES clinic(id),
+
+        CONSTRAINT uk_clinic_whatsapp_clinic
+            UNIQUE (clinic_id),
+
+        CONSTRAINT uk_clinic_whatsapp_phone_number
+            UNIQUE (phone_number_id),
+
+        CONSTRAINT chk_clinic_whatsapp_status
+            CHECK (
+                status IN ('ACTIVE', 'INACTIVE', 'DISCONNECTED')
+            )
+    );
+
+    ALTER TABLE patient
+    ADD COLUMN source VARCHAR(50);

@@ -31,4 +31,12 @@ public class Patient {
 
     @Column(name = "date_of_birth")
     private LocalDate dateOfBirth;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 20)
+    private Gender gender;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = true)
+    private PatientSource source;
 }
