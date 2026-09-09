@@ -42,12 +42,31 @@ public class NotificationDispatchService {
         // notification rows at all - so catch it here, right before handing
         // it to n8n to send.
         claimed.removeIf(n -> {
-            boolean stillValid = n.getAppointment().getStatus() == AppointmentStatus.CONFIRMED;
-            if (!stillValid) {
+            AppointmentStatus appointmentStatus = n.getAppointment().getStatus();
+
+            boolean valid = switch (n.getType()) {
+
+                case CANCEL_BOOKING_CONFIRMATION ->
+                        appointmentStatus == AppointmentStatus.CANCELLED;
+
+                case REMINDER_24H,
+                        BOOKING_CONFIRMATION,
+                        RESCHEDULED ->
+                        appointmentStatus == AppointmentStatus.CONFIRMED;
+
+                default -> false;
+            };
+
+            if (!valid) {
                 n.setStatus(NotificationStatus.FAILED);
-                n.setErrorMessage("Appointment no longer CONFIRMED (status: " + n.getAppointment().getStatus() + ") at dispatch time");
+                n.setErrorMessage(
+                        "Notification no longer valid. " +
+                                "Type: " + n.getType() +
+                                ", appointment status: " + appointmentStatus
+                );
             }
-            return !stillValid;
+
+            return !valid;
         });
 
         return claimed.stream()

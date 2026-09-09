@@ -1,5 +1,6 @@
 package com.jfl.appointment.n8n.service;
 
+import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.exception.SlotUnavailableException;
@@ -30,6 +31,7 @@ public class AppointmentService {
     private final ClinicRepository clinicRepository;
     private final AvailabilityService availabilityService;
     private final ConversationSessionService sessionService;
+    private final NotificationSchedulingService notificationSchedulingService;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -111,7 +113,7 @@ public class AppointmentService {
         if (request.sessionId() != null) {
             sessionService.markBooked(request.sessionId());
         }
-
+        notificationSchedulingService.scheduleBookingReminder(saved);
         return toResponse(saved);
     }
 

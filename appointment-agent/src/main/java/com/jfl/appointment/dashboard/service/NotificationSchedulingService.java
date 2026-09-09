@@ -35,6 +35,26 @@ public class NotificationSchedulingService {
         notificationRepository.save(n);
     }
 
+    public void bookingNotification(Appointment appointment) {
+        Notification n = new Notification();
+        n.setAppointment(appointment);
+        n.setType(NotificationType.BOOKING_CONFIRMATION);
+        n.setChannel(NotificationChannel.WHATSAPP);
+        n.setStatus(NotificationStatus.PENDING);
+        n.setScheduledAt(LocalDateTime.now());
+        notificationRepository.save(n);
+    }
+
+    public void cancelBookingNotification(Appointment appointment) {
+        Notification n = new Notification();
+        n.setAppointment(appointment);
+        n.setType(NotificationType.CANCEL_BOOKING_CONFIRMATION);
+        n.setChannel(NotificationChannel.WHATSAPP);
+        n.setStatus(NotificationStatus.PENDING);
+        n.setScheduledAt(LocalDateTime.now());
+        notificationRepository.save(n);
+    }
+
     /**
      * Called after a successful reschedule. Moves the existing PENDING reminder
      * to the new time instead of leaving it pointing at the old slot. If none
