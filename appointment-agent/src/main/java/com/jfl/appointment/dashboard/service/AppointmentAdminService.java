@@ -41,9 +41,9 @@ public class AppointmentAdminService {
     private final DoctorRepository doctorRepository;
     private final ServiceOfferingRepository serviceOfferingRepository;
     private final DoctorServiceRepository doctorServiceRepository;
-    private final NotificationService notificationService;
     private final AvailabilityService availabilityService;
     private final NotificationSchedulingService notificationSchedulingService;
+    private final NotificationRepository notificationRepository;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
@@ -252,6 +252,7 @@ public class AppointmentAdminService {
 //                 savedAppointment
 //         );
 
+        notificationSchedulingService.bookingNotification(savedAppointment);
         notificationSchedulingService.scheduleBookingReminder(savedAppointment);
 
         return toDto(savedAppointment);
@@ -443,12 +444,13 @@ public class AppointmentAdminService {
         // =====================================================
         // 11. Booking notification
         // =====================================================
-
-        // notificationService.createBookingConfirmation(
-        //         savedAppointment
-        // );
-
-        notificationSchedulingService.scheduleBookingReminder(savedAppointment);
+        Optional<Notification> notification =
+                notificationRepository.findByAppointmentIdAndTypeAndChannel(
+                        previousAppointment.getId(), NotificationType.REMINDER_24H, NotificationChannel.WHATSAPP);
+        notification.ifPresent(p-> {
+            p.setStatus(NotificationStatus.SENT);
+        });
+        notificationSchedulingService.bookingNotification(savedAppointment);
 
         return toDto(savedAppointment);
     }
@@ -505,6 +507,7 @@ public class AppointmentAdminService {
         }
 
         appointment.setStatus(AppointmentStatus.CANCELLED);
+        notificationSchedulingService.cancelBookingNotification(appointment);
         return toDto(appointment);
     }
 
@@ -610,8 +613,8 @@ public class AppointmentAdminService {
         //         oldEnd
         // );
 
-        notificationSchedulingService.rescheduleBookingReminder(appointment);
-        notificationSchedulingService.scheduleRescheduledNotice(appointment);
+        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
+        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
 
         return toDto(savedAppointment);
     }

@@ -2,11 +2,12 @@ package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
-import com.jfl.appointment.entity.Appointment;
-import com.jfl.appointment.entity.AppointmentStatus;
+import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
+import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.AppointmentRepository;
+import com.jfl.appointment.repository.NotificationRepository;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @RestController
@@ -31,6 +33,7 @@ public class AppointmentAdminController {
 
     private final AppointmentAdminService appointmentAdminService;
     private final AppointmentRepository appointmentRepository;
+    private final NotificationRepository notificationRepository;
 
     @PreAuthorize("""
         hasAnyRole(
@@ -219,6 +222,13 @@ public class AppointmentAdminController {
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
+
+        Optional<Notification> notification =
+                notificationRepository.findByAppointmentIdAndTypeAndChannel(
+                savedAppointment.getId(), NotificationType.REMINDER_24H, NotificationChannel.WHATSAPP);
+        notification.ifPresent(p-> {
+            p.setStatus(NotificationStatus.SENT);
+        });
         // --------------------------------------------------
         // 4. Convert to DTO
         // --------------------------------------------------
