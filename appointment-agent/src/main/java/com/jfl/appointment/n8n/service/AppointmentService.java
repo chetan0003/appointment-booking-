@@ -1,11 +1,13 @@
 package com.jfl.appointment.n8n.service;
 
+import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.exception.SlotUnavailableException;
 import com.jfl.appointment.n8n.dto.AppointmentResponse;
 import com.jfl.appointment.n8n.dto.CreateAppointmentRequest;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.IntegrationUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class AppointmentService {
     private final ClinicRepository clinicRepository;
     private final AvailabilityService availabilityService;
     private final ConversationSessionService sessionService;
+    private final NotificationSchedulingService notificationSchedulingService;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -93,7 +96,7 @@ public class AppointmentService {
         patient.setName(request.patientName());
 
         Appointment appointment = new Appointment();
-        appointment.setAppointmentCode(generateAppointmentCode(request.idempotencyKey()));
+        appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
         appointment.setClinic(clinic);
         appointment.setDoctor(doctor);
         appointment.setService(service);
@@ -110,15 +113,8 @@ public class AppointmentService {
         if (request.sessionId() != null) {
             sessionService.markBooked(request.sessionId());
         }
-
+        notificationSchedulingService.scheduleBookingReminder(saved);
         return toResponse(saved);
-    }
-
-    private String generateAppointmentCode(String idempotencyKey) {
-        if (idempotencyKey != null) {
-            return "IDEMP-" + idempotencyKey;
-        }
-        return "APT-" + System.currentTimeMillis() % 1_000_000 + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
     }
 
     private AppointmentResponse toResponse(Appointment a) {

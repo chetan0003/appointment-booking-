@@ -3,12 +3,16 @@ package com.jfl.appointment.repository;
 import com.jfl.appointment.entity.Appointment;
 import com.jfl.appointment.entity.AppointmentStatus;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -48,12 +52,15 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             where a.clinic.id = :clinicId
               and (:serviceId is null or a.service.id = :serviceId)
               and (:doctorId is null or a.doctor.id = :doctorId)
+              and (:status is null or a.status in :status)
             order by a.appointmentDate asc, a.startTime asc
             """)
-    List<Appointment> findForDashboard(
+    Page<Appointment> findForDashboard(
             @Param("clinicId") Long clinicId,
             @Param("serviceId") Long serviceId,
-            @Param("doctorId") Long doctorId
+            @Param("doctorId") Long doctorId,
+            @Param("status") AppointmentStatus status,
+            Pageable pageable
     );
 
     @Query("""
@@ -98,5 +105,84 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             @Param("clinicId") Long clinicId,
             @Param("date") LocalDate date,
             @Param("doctorId") Long doctorId
+    );
+
+    List<Appointment> findByDoctorIdAndAppointmentDateAndStatusIn(
+            Long doctorId,
+            LocalDate date,
+            Collection<AppointmentStatus> statuses
+    );
+
+    List<Appointment> findByDoctorIdAndAppointmentDate(
+            Long doctorId,
+            LocalDate appointmentDate
+    );
+
+    List<Appointment> findByFollowUpOfAppointmentId(
+            Long appointmentId
+    );
+
+    @Query("""
+            select count(a) > 0
+            from Appointment a
+            where a.doctor.id = :doctorId
+              and a.appointmentDate = :date
+              and a.id <> :appointmentId
+              and a.status not in (
+                    com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
+                    com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
+              )
+              and a.startTime < :endTime
+              and a.endTime > :startTime
+            """)
+    boolean existsConflictForReschedule(
+            @Param("doctorId") Long doctorId,
+            @Param("date") LocalDate date,
+            @Param("startTime") LocalTime startTime,
+            @Param("endTime") LocalTime endTime,
+            @Param("appointmentId") Long appointmentId
+    );
+
+    @Query("""
+            select count(a) > 0
+            from Appointment a
+            where a.doctor.id = :doctorId
+              and a.appointmentDate = :date
+              and a.status not in (
+                    com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
+                    com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
+              )
+              and a.startTime < :endTime
+              and a.endTime > :startTime
+            """)
+    boolean existsConflict(
+            @Param("doctorId") Long doctorId,
+            @Param("date") LocalDate date,
+            @Param("startTime") LocalTime startTime,
+            @Param("endTime") LocalTime endTime
+    );
+
+    Page<Appointment> findByClinicIdAndPatientIdOrderByAppointmentDateAscStartTimeAsc(
+            Long clinicId,
+            Long patientId,
+            Pageable pageable
+    );
+
+    @Query("""
+    SELECT a.appointmentDate, COUNT(a)
+    FROM Appointment a
+    WHERE a.clinic.id = :clinicId
+      AND a.appointmentDate BETWEEN :fromDate AND :toDate
+      AND a.status NOT IN (
+          com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
+          com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
+      )
+    GROUP BY a.appointmentDate
+    ORDER BY a.appointmentDate
+    """)
+    List<Object[]> countAppointmentsByDate(
+            @Param("clinicId") Long clinicId,
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate
     );
 }
