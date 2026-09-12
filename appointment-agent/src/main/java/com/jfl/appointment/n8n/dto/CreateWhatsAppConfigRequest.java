@@ -2,21 +2,20 @@ package com.jfl.appointment.n8n.dto;
 
 
 import jakarta.validation.constraints.NotBlank;
-
 public record CreateWhatsAppConfigRequest(
 
-        @NotBlank(message = "Phone number ID is required")
-        String phoneNumberId,
+        @NotBlank
+        String whatsappNumber,
 
-        @NotBlank(message = "WABA ID is required")
-        String wabaId,
+        @NotBlank
+        String twilioAccountSid,
 
-        String businessAccountId,
+        String twilioSubaccountSid,
 
-        @NotBlank(message = "Display phone number is required")
-        String displayPhoneNumber,
+        @NotBlank
+        String twilioWhatsappSenderSid,
 
-        @NotBlank(message = "Access token is required")
-        String accessToken
+        String wabaId
+
 ) {
 }
