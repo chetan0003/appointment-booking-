@@ -15,5 +15,6 @@ public record SessionResponse(
         LocalDate appointmentDate,
         LocalTime selectedStartTime,
         String patientName,
+        Long patientId,
         ConversationState state
 ) {}

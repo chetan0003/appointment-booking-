@@ -154,6 +154,7 @@ public class PatientQrService {
 
                     String whatsappUrl =
                             whatsAppQrLinkService.generateLink(
+                                     clinicId,
                                     whatsappConfig.getWhatsappNumber(),
                                     rawToken
                             );
@@ -290,6 +291,7 @@ public class PatientQrService {
 
         String whatsappUrl =
                 whatsAppQrLinkService.generateLink(
+                        clinicId,
                         whatsappConfig.getWhatsappNumber(),
                         rawToken
                 );

@@ -83,17 +83,20 @@ public class AppointmentService {
                             + " is no longer available for this doctor.");
         }
 
-        Patient patient = patientRepository.findByClinicIdAndWhatsappNumberAndName(
-                        clinic.getId(), request.whatsappNumber(),request.patientName())
-                .orElseGet(() -> {
-                    Patient p = new Patient();
-                    p.setClinic(clinic);
-                    p.setWhatsappNumber(request.whatsappNumber());
-                    p.setName(request.patientName());
-                    return patientRepository.save(p);
-                });
-        // Keep the name fresh in case they gave a fuller name this time.
-        patient.setName(request.patientName());
+        Patient patient = patientRepository.findById(request.patientId())
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + request.serviceId()));
+//        Patient patient = patientRepository.findByClinicIdAndWhatsappNumberAndName(
+//                        clinic.getId(), request.whatsappNumber(),request.patientName())
+//                .orElseGet(() -> {
+//                    Patient p = new Patient();
+//                    p.setClinic(clinic);
+//                    p.setWhatsappNumber(request.whatsappNumber());
+//                    p.setName(request.patientName());
+//                    return patientRepository.save(p);
+//                });
+//
+//        // Keep the name fresh in case they gave a fuller name this time.
+//        patient.setName(request.patientName());
 
         Appointment appointment = new Appointment();
         appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));

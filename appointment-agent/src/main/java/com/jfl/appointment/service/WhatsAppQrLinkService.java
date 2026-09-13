@@ -10,12 +10,13 @@ import java.nio.charset.StandardCharsets;
 public class WhatsAppQrLinkService {
 
     public String generateLink(
+            Long clinicId,
             String whatsappNumber,
             String token
     ) {
 
         String message =
-                "Hi Hola MD " + token;
+                "Hi HOLA_MD:" + clinicId + ":" + token;
 
         String encodedMessage =
                 URLEncoder.encode(
