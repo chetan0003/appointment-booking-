@@ -8,6 +8,7 @@ import com.jfl.appointment.n8n.dto.AppointmentResponse;
 import com.jfl.appointment.n8n.dto.CreateAppointmentRequest;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
+import com.jfl.appointment.util.Constants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,8 @@ public class AppointmentService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
         log.info("createAppointment: {},{},{}",request.clinicId(), request.patientName(),request.appointmentDate());
+        if (request.qrType().isBlank())
+            new NotFoundException("QRType param is missing: " + request.clinicId());
         Clinic clinic = clinicRepository.findById(request.clinicId())
                 .orElseThrow(() -> new NotFoundException("Clinic not found: " + request.clinicId()));
 
@@ -83,17 +86,25 @@ public class AppointmentService {
                             + " is no longer available for this doctor.");
         }
 
-        Patient patient = patientRepository.findByClinicIdAndWhatsappNumberAndName(
-                        clinic.getId(), request.whatsappNumber(),request.patientName())
-                .orElseGet(() -> {
-                    Patient p = new Patient();
-                    p.setClinic(clinic);
-                    p.setWhatsappNumber(request.whatsappNumber());
-                    p.setName(request.patientName());
-                    return patientRepository.save(p);
-                });
-        // Keep the name fresh in case they gave a fuller name this time.
-        patient.setName(request.patientName());
+        Patient patient = null;
+
+        if (Constants.QR_CODE_TYPE.equalsIgnoreCase(request.qrType())) {
+            // QR flow
+            if (request.patientId() != null) {
+                patient = patientRepository.findById(request.patientId())
+                        .orElseGet(() -> createWhatsAppPatient(request, clinic));
+            } else {
+                patient = createWhatsAppPatient(request, clinic);
+            }
+        } else {
+            // Normal flow - patient must already exist
+            patient = patientRepository.findById(request.patientId())
+                    .orElseThrow(() ->
+                            new NotFoundException(
+                                    "Patient not found: " + request.patientId()
+                            ));
+        }
+
 
         Appointment appointment = new Appointment();
         appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
@@ -115,6 +126,21 @@ public class AppointmentService {
         }
         notificationSchedulingService.scheduleBookingReminder(saved);
         return toResponse(saved);
+    }
+
+    private Patient createWhatsAppPatient(
+            CreateAppointmentRequest request,
+            Clinic clinic) {
+
+        Patient patient = new Patient();
+
+        patient.setClinic(clinic);
+        patient.setName(request.patientName());
+        patient.setWhatsappNumber(request.whatsappNumber());
+        patient.setSource(PatientSource.WHATSAPP);
+        patient.setProfileStatus(PatientProfileStatus.INCOMPLETE);
+
+        return patientRepository.save(patient);
     }
 
     private AppointmentResponse toResponse(Appointment a) {

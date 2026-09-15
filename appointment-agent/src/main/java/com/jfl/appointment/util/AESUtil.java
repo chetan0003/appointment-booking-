@@ -2,6 +2,7 @@ package com.jfl.appointment.util;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -13,47 +14,59 @@ import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
+@Component
 public class AESUtil {
 
-    @Autowired
-    private  static SecretKey secretKey;
+    private final SecretKey secretKey;
 
-    public AESUtil(@Value("${app.encryption.key}") String encryptionKey,SecretKey secretKey) {
+    public AESUtil(
+            @Value("${app.encryption.key}") String encryptionKey) {
+
         this.secretKey = new SecretKeySpec(
                 Base64.getDecoder().decode(encryptionKey),
                 "AES"
         );
-        this.secretKey = secretKey;
     }
 
-    public static String encrypt(String plainText) {
+    public String encrypt(String plainText) {
         try {
             byte[] iv = new byte[12];
+
             SecureRandom secureRandom = new SecureRandom();
             secureRandom.nextBytes(iv);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            GCMParameterSpec spec = new GCMParameterSpec(128, iv);
 
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey, spec);
+            GCMParameterSpec spec =
+                    new GCMParameterSpec(128, iv);
+
+            cipher.init(
+                    Cipher.ENCRYPT_MODE,
+                    secretKey,
+                    spec
+            );
 
             byte[] encrypted = cipher.doFinal(
                     plainText.getBytes(StandardCharsets.UTF_8)
             );
 
-            // Store IV + encrypted data together
-            ByteBuffer buffer = ByteBuffer.allocate(iv.length + encrypted.length);
+            ByteBuffer buffer =
+                    ByteBuffer.allocate(iv.length + encrypted.length);
+
             buffer.put(iv);
             buffer.put(encrypted);
 
-            return Base64.getEncoder().encodeToString(buffer.array());
+            return Base64.getEncoder()
+                    .encodeToString(buffer.array());
 
         } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("Failed to encrypt token", e);
+            throw new IllegalStateException(
+                    "Failed to encrypt token", e
+            );
         }
     }
 
-    public static String decrypt(String encryptedText) {
+    public String decrypt(String encryptedText) {
         try {
             byte[] decoded = Base64.getDecoder().decode(encryptedText);
 

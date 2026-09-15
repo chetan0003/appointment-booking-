@@ -6,6 +6,7 @@ import lombok.Setter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -41,10 +42,35 @@ public class ConversationSession {
     @Column(name = "selected_start_time")
     private LocalTime selectedStartTime;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "patient_id")
+    private Patient patient;
+
     @Column(name = "patient_name")
     private String patientName;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ConversationState state = ConversationState.STARTED;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+
+        if (state == null) {
+            state = ConversationState.STARTED;
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

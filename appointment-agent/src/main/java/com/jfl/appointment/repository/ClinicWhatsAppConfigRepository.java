@@ -10,9 +10,12 @@ public interface ClinicWhatsAppConfigRepository
 
     Optional<ClinicWhatsAppConfig> findByClinicId(Long clinicId);
 
-    Optional<ClinicWhatsAppConfig> findByPhoneNumberId(String phoneNumberId);
 
     boolean existsByClinicId(Long clinicId);
 
-    boolean existsByPhoneNumberId(String phoneNumberId);
+
+    Optional<ClinicWhatsAppConfig>
+    findByWhatsappNumber(String whatsappNumber);
+
+    boolean existsByWhatsappNumber(String whatsappNumber);
 }

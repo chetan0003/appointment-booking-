@@ -2,8 +2,11 @@ package com.jfl.appointment.dashboard.service;
 
 import com.jfl.appointment.dashboard.dto.CreatePatientRequest;
 import com.jfl.appointment.dashboard.dto.PatientResponseDto;
+import com.jfl.appointment.dashboard.dto.UpdatePatientRequest;
 import com.jfl.appointment.entity.Clinic;
 import com.jfl.appointment.entity.Patient;
+import com.jfl.appointment.entity.PatientProfileStatus;
+import com.jfl.appointment.entity.PatientSource;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.PatientRepository;
@@ -95,6 +98,8 @@ public class PatientService {
                 request.dateOfBirth()
         );
         patient.setGender(request.gender());
+        patient.setSource(PatientSource.DASHBOARD);
+        patient.setProfileStatus(PatientProfileStatus.COMPLETE);
         //patient.setActive(true);
 
         // =====================================================
@@ -118,6 +123,46 @@ public class PatientService {
     }
 
 
+    @Transactional
+    public PatientResponseDto updatePatient(
+            Long clinicId,
+            Long patientId,
+            UpdatePatientRequest request) {
+
+        Clinic clinic = clinicRepository.findById(clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Clinic not found: " + clinicId
+                        ));
+
+        Patient patient = patientRepository
+                .findById(patientId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Patient not found: " + patientId
+                        ));
+
+        // Important: ensure patient belongs to this clinic
+        if (!patient.getClinic().getId().equals(clinic.getId())) {
+            throw new IllegalArgumentException(
+                    "Patient does not belong to clinic: " + clinicId
+            );
+        }
+
+        patient.setName(request.name());
+        patient.setWhatsappNumber(request.whatsappNumber());
+        patient.setEmail(request.email());
+        patient.setDateOfBirth(request.dateOfBirth());
+        patient.setGender(request.gender());
+        //patient.setSource(PatientSource.DASHBOARD);
+        patient.setProfileStatus(
+                isProfileComplete(patient)
+                        ? PatientProfileStatus.COMPLETE
+                        : PatientProfileStatus.INCOMPLETE
+        );
+
+        return toDto(patientRepository.save(patient));
+    }
 
     @Transactional(readOnly = true)
     public Page<PatientResponseDto> getAllPatient(
@@ -194,12 +239,26 @@ public class PatientService {
 
     private PatientResponseDto toDto(Patient patient) {
         return new PatientResponseDto(
-                patient.getId(),patient.getName(),
+                patient.getId(),
+                patient.getName(),
                 patient.getWhatsappNumber(),
                 patient.getEmail(),
                 patient.getDateOfBirth(),
                 patient.getClinic().getId(),
-                patient.getGender() != null ? patient.getGender().name() : null);
+                patient.getGender() != null ? patient.getGender().name() : null,
+                patient.getSource() != null ? patient.getSource().name() : null,
+                patient.getProfileStatus() != null ? patient.getProfileStatus().name() : null
+        );
     }
 
+    private boolean isProfileComplete(Patient patient) {
+        return patient.getName() != null
+                && !patient.getName().isBlank()
+                && patient.getWhatsappNumber() != null
+                && !patient.getWhatsappNumber().isBlank()
+                && patient.getEmail() != null
+                && !patient.getEmail().isBlank()
+                && patient.getDateOfBirth() != null
+                && patient.getGender() != null;
+    }
 }

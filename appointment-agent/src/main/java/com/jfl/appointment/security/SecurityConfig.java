@@ -103,7 +103,8 @@ public class SecurityConfig {
                                 "/api/sessions/**",
                                 "/api/appointments",
                                 "/api/n8n/**",
-                                "/api/dashboard/notifications/**"
+                                "/api/dashboard/notifications/**",
+                                "/api/public/patient-qr/**"
                         ).permitAll()
 
                         .requestMatchers("/api/users/**")

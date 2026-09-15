@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jfl.appointment.entity.Clinic;
 import com.jfl.appointment.entity.ClinicWhatsAppConfig;
 import com.jfl.appointment.entity.WhatsAppConfigStatus;
+import com.jfl.appointment.entity.WhatsAppProvider;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ClinicWhatsAppConfigRepository;
@@ -123,31 +124,100 @@ public class WhatsAppIntegrationService {
                 .toBodilessEntity();
     }
 
-    private void saveClinicCredentials(Long clinicId, String wabaId, String phoneNumberId,
-                                       String displayPhoneNumber, String token, String bussinessAccountId) {
-        // DB Entity mapping & save logic for Hola MD:
-        // IMPORTANT: Always encrypt 'token' (e.g., using AES-GCM or Spring Security crypto)
+    private void saveClinicCredentials(
+            Long clinicId,
+            String wabaId,
+            String whatsappNumber,
+            String twilioAccountSid,
+            String twilioSubaccountSid,
+            String twilioWhatsappSenderSid
+    ) {
+
         Clinic clinic = clinicRepository.findById(clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(
                                 "Clinic not found with id: " + clinicId
-                        ));
-        String encryptedToken = AESUtil.encrypt(token);
-        ClinicWhatsAppConfig whatsAppConfig = new ClinicWhatsAppConfig(
-                clinic,
-                phoneNumberId,
-                wabaId,
-                bussinessAccountId,
-                displayPhoneNumber,
-                encryptedToken,
-                WhatsAppConfigStatus.ACTIVE,
-                LocalDateTime.now(),
-                LocalDateTime.now()
-        );
-        clinicWhatsAppConfigRepository.save(whatsAppConfig);
-        log.info("Credentials saved for Clinic: " + clinicId + " | WABA: " + wabaId);
-    }
+                        )
+                );
 
+        /*
+         * Check whether WhatsApp is already configured
+         * for this clinic.
+         */
+        ClinicWhatsAppConfig whatsAppConfig =
+                clinicWhatsAppConfigRepository
+                        .findByClinicId(clinicId)
+                        .orElse(null);
+
+        if (whatsAppConfig == null) {
+
+            whatsAppConfig = new ClinicWhatsAppConfig();
+
+            whatsAppConfig.setClinic(clinic);
+
+        }
+
+        /*
+         * Clinic WhatsApp number.
+         *
+         * Example:
+         * 919876543210
+         */
+        whatsAppConfig.setWhatsappNumber(
+                whatsappNumber
+        );
+
+        /*
+         * Current provider.
+         */
+        whatsAppConfig.setProvider(
+                WhatsAppProvider.TWILIO
+        );
+
+        /*
+         * Twilio configuration.
+         */
+        whatsAppConfig.setTwilioAccountSid(
+                twilioAccountSid
+        );
+
+        whatsAppConfig.setTwilioSubaccountSid(
+                twilioSubaccountSid
+        );
+
+        whatsAppConfig.setTwilioWhatsappSenderSid(
+                twilioWhatsappSenderSid
+        );
+
+        /*
+         * WhatsApp Business Account ID.
+         */
+        whatsAppConfig.setWabaId(wabaId);
+
+        /*
+         * Activate configuration.
+         */
+        whatsAppConfig.setStatus(
+                WhatsAppConfigStatus.ACTIVE
+        );
+
+        /*
+         * Save.
+         *
+         * @PrePersist / @PreUpdate will handle
+         * createdAt and updatedAt.
+         */
+        clinicWhatsAppConfigRepository.save(
+                whatsAppConfig
+        );
+
+        log.info(
+                "WhatsApp credentials saved for Clinic: {} | WABA: {} | WhatsApp Number: {}",
+                clinicId,
+                wabaId,
+                whatsappNumber
+        );
+    }
     private String fetchBusinessIdFromWaba(String wabaId, String userAccessToken) {
         JsonNode response = restClient.get()
                 .uri(graphApiUrl + "/{wabaId}?fields=owner_business_info", wabaId)

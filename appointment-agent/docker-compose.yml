@@ -54,6 +54,9 @@ services:
     image: docker.n8n.io/n8nio/n8n
     container_name: appointment-n8n
     restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
     environment:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
@@ -63,6 +66,8 @@ services:
       N8N_PROTOCOL: http
 
       SPRING_BOOT_BASE_URL: http://backend:8080
+      WEBHOOK_URL: https://dispersal-upfront-drapery.ngrok-free.dev/
+
 
     ports:
       - "5678:5678"
@@ -70,6 +75,19 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
 
+    networks:
+      - appointment-network
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    restart: always
+    command:
+      - "http"
+      - "n8n:5678" # Points directly to n8n inside the Docker network
+    ports:
+      - "4040:4040" # Web UI to inspect traffic & get your public URL
+    environment:
+      - NGROK_AUTHTOKEN=3JEcY4eyaUvyoeYAMHMPvNLbJeQ_6iCKHZC2EU6PeiqgjNVGT # Get from dashboard.ngrok.com
     networks:
       - appointment-network
 

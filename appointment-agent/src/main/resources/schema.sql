@@ -497,42 +497,92 @@ CREATE UNIQUE INDEX uq_notification_appointment_type_channel
 
 
 
-    CREATE TABLE clinic_whatsapp_config (
+   CREATE TABLE clinic_whatsapp_config (
+       id BIGSERIAL PRIMARY KEY,
+
+       clinic_id BIGINT NOT NULL,
+
+       whatsapp_number VARCHAR(30) NOT NULL,
+
+       provider VARCHAR(20) NOT NULL DEFAULT 'TWILIO',
+
+       twilio_account_sid VARCHAR(100),
+
+       twilio_subaccount_sid VARCHAR(100),
+
+       twilio_whatsapp_sender_sid VARCHAR(100),
+
+       waba_id VARCHAR(100),
+
+       status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+
+       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+       CONSTRAINT fk_clinic_whatsapp_config_clinic
+           FOREIGN KEY (clinic_id)
+           REFERENCES clinic(id),
+
+       CONSTRAINT uk_clinic_whatsapp_clinic
+           UNIQUE (clinic_id),
+
+       CONSTRAINT uk_clinic_whatsapp_number
+           UNIQUE (whatsapp_number),
+
+       CONSTRAINT chk_clinic_whatsapp_provider
+           CHECK (
+               provider IN ('TWILIO', 'META')
+           ),
+
+       CONSTRAINT chk_clinic_whatsapp_status
+           CHECK (
+               status IN (
+                   'ACTIVE',
+                   'INACTIVE',
+                   'DISCONNECTED'
+               )
+           )
+   );
+
+
+    ALTER TABLE patient
+    ADD COLUMN source VARCHAR(50);
+
+
+
+    CREATE TABLE patient_qr_credential (
         id BIGSERIAL PRIMARY KEY,
 
-        clinic_id BIGINT NOT NULL,
+        patient_id BIGINT NOT NULL,
 
-        phone_number_id VARCHAR(100) NOT NULL,
-
-        waba_id VARCHAR(100) NOT NULL,
-
-        business_account_id VARCHAR(100),
-
-        display_phone_number VARCHAR(30) NOT NULL,
-
-        access_token TEXT NOT NULL,
+        token_hash VARCHAR(64) NOT NULL,
 
         status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
 
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP,
 
-        CONSTRAINT fk_clinic_whatsapp_config_clinic
-            FOREIGN KEY (clinic_id)
-            REFERENCES clinic(id),
+        revoked_at TIMESTAMP,
 
-        CONSTRAINT uk_clinic_whatsapp_clinic
-            UNIQUE (clinic_id),
+        CONSTRAINT fk_patient_qr_patient
+            FOREIGN KEY (patient_id)
+            REFERENCES patient(id),
 
-        CONSTRAINT uk_clinic_whatsapp_phone_number
-            UNIQUE (phone_number_id),
+        CONSTRAINT uk_patient_qr_token_hash
+            UNIQUE (token_hash),
 
-        CONSTRAINT chk_clinic_whatsapp_status
+        CONSTRAINT chk_patient_qr_status
             CHECK (
-                status IN ('ACTIVE', 'INACTIVE', 'DISCONNECTED')
+                status IN ('ACTIVE', 'REVOKED', 'EXPIRED')
             )
     );
 
-    ALTER TABLE patient
-    ADD COLUMN source VARCHAR(50);
+    CREATE INDEX idx_patient_qr_token_hash
+        ON patient_qr_credential(token_hash);
+
+    CREATE INDEX idx_patient_qr_patient_id
+        ON patient_qr_credential(patient_id);
+
+

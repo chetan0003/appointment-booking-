@@ -13,11 +13,13 @@ public class SessionController {
     private final ConversationSessionService sessionService;
 
     // n8n calls this first, every inbound message.
-    @GetMapping("/api/n8n/clinics/{clinicId}/sessions/active")
+    @GetMapping("/api/n8n/clinics/sessions/active")
     public SessionResponse getActiveSession(
-            @PathVariable Long clinicId,
-            @RequestParam String whatsappNumber) {
-        return sessionService.findOrCreateActiveSession(clinicId, whatsappNumber);
+            @RequestParam(required = false) Long clinicId,
+            @RequestParam(required = false) String whatsappNumber,
+            @RequestParam(required = false) Long patientId,
+            @RequestParam String qrType) {
+        return sessionService.findOrCreateActiveSession(clinicId, whatsappNumber,patientId,qrType);
     }
 
     // n8n calls this after the AI extracts new info from the message.
