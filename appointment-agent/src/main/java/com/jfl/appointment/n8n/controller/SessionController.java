@@ -17,8 +17,9 @@ public class SessionController {
     public SessionResponse getActiveSession(
             @RequestParam(required = false) Long clinicId,
             @RequestParam(required = false) String whatsappNumber,
-            @RequestParam(required = false) Long patientId) {
-        return sessionService.findOrCreateActiveSession(clinicId, whatsappNumber,patientId);
+            @RequestParam(required = false) Long patientId,
+            @RequestParam String qrType) {
+        return sessionService.findOrCreateActiveSession(clinicId, whatsappNumber,patientId,qrType);
     }
 
     // n8n calls this after the AI extracts new info from the message.

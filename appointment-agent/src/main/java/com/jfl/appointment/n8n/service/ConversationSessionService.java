@@ -47,7 +47,7 @@ public class ConversationSessionService {
 //    }
 
     @Transactional
-    public SessionResponse findOrCreateActiveSession(Long clinicId, String whatsappNumber, Long patientId) {
+    public SessionResponse findOrCreateActiveSession(Long clinicId, String whatsappNumber, Long patientId,String source) {
         // 1. List all terminal states that count as "finished" sessions
         List<ConversationState> terminalStates = List.of(
                 ConversationState.BOOKED,
@@ -58,8 +58,25 @@ public class ConversationSessionService {
         Optional<ConversationSession> activeSession = sessionRepository
                 .findTopByWhatsappNumberAndStateNotInOrderByUpdatedAtDesc(whatsappNumber, terminalStates);
 
+        // Clinic QR: clinicId present, patientId null, source=CLINIC_QR (or similar)
+        if ("CLINIC".equals(source) && clinicId != null && patientId == null) {
+            activeSession.ifPresent(existing -> {
+                existing.setState(ConversationState.ABANDONED);
+                sessionRepository.save(existing);
+            });
+            Clinic clinic = clinicRepository.findById(clinicId)
+                    .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+            ConversationSession newSession = new ConversationSession();
+            newSession.setClinic(clinic);
+            newSession.setPatient(null); // walk-in
+            newSession.setWhatsappNumber(whatsappNumber);
+            newSession.setState(ConversationState.STARTED);
+            return toResponse(sessionRepository.save(newSession));
+        }
+
+
         // 3. IF QR Code data is provided (new booking flow started)
-        if (patientId != null && clinicId != null) {
+        if ("PATIENT".equalsIgnoreCase(source) && patientId != null && clinicId != null) {
             // Abandon previous incomplete session if user scanned a new QR code
             activeSession.ifPresent(existing -> {
                 existing.setState(ConversationState.ABANDONED);
@@ -86,6 +103,7 @@ public class ConversationSessionService {
 
         return toResponse(existing);
     }
+
 
     @Transactional
     public SessionResponse updateSession(Long sessionId, UpdateSessionRequest request) {
@@ -134,7 +152,7 @@ public class ConversationSessionService {
                 s.getAppointmentDate(),
                 s.getSelectedStartTime(),
                 s.getPatientName(),
-                s.getPatient().getId(),
+                s.getPatient() != null ? s.getPatient().getId() : null,
                 s.getState()
         );
     }

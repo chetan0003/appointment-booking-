@@ -1,16 +1,13 @@
 package com.jfl.appointment.n8n.service;
 
 
-import com.jfl.appointment.entity.ClinicWhatsAppConfig;
-import com.jfl.appointment.entity.Patient;
-import com.jfl.appointment.entity.PatientQrStatus;
+import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.ClinicWhatsappConfigDto;
+import com.jfl.appointment.n8n.dto.IdentifyClinicResponse;
 import com.jfl.appointment.n8n.dto.IdentifyPatientResponse;
-import com.jfl.appointment.repository.ClinicRepository;
-import com.jfl.appointment.repository.ClinicWhatsAppConfigRepository;
-import com.jfl.appointment.repository.PatientQrCredentialRepository;
-import com.jfl.appointment.repository.PatientRepository;
+import com.jfl.appointment.repository.*;
+import com.jfl.appointment.service.ClinicQrTokenService;
 import com.jfl.appointment.service.PatientQrService;
 import com.jfl.appointment.service.PatientQrTokenService;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +28,8 @@ public class N8nSupportService {
     private final PatientRepository patientRepository;
     private final ClinicWhatsAppConfigRepository clinicWhatsAppConfigRepository;
     private final PatientQrTokenService patientQrService;
+    private final ClinicQrTokenService clinicQrTokenService;
+    private final ClinicQrCredentialRepository clinicQrCredentialRepository;
     private final PatientQrCredentialRepository credentialRepository;
 
     @Transactional(readOnly = true)
@@ -97,5 +96,35 @@ public class N8nSupportService {
                     );
                 })
                 .orElse(new IdentifyPatientResponse(null, null));
+    }
+
+    @Transactional(readOnly = true)
+    public IdentifyClinicResponse clinicIdentifyByToken(
+            Long clinicId,
+            String token
+    ) {
+        if (token == null || token.isBlank()) {
+            return new IdentifyClinicResponse(null, null);
+        }
+
+        String tokenHash = clinicQrTokenService.hashToken(token);
+
+        return clinicQrCredentialRepository
+                .findByTokenHashAndStatus(
+                        tokenHash,
+                        ClinicQrStatus.ACTIVE
+                )
+                .filter(qr -> qr.getExpiresAt() == null
+                        || qr.getExpiresAt().isAfter(LocalDateTime.now()))
+                .filter(qr -> qr.getClinic().getId().equals(clinicId))
+                .map(qr -> {
+                    Clinic clinic = qr.getClinic();
+
+                    return new IdentifyClinicResponse(
+                            clinic.getId(),
+                            clinic.getName()
+                    );
+                })
+                .orElse(new IdentifyClinicResponse(null, null));
     }
 }

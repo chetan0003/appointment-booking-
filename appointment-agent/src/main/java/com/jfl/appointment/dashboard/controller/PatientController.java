@@ -1,9 +1,6 @@
 package com.jfl.appointment.dashboard.controller;
 
-import com.jfl.appointment.dashboard.dto.ApiResponse;
-import com.jfl.appointment.dashboard.dto.AppointmentListItemDto;
-import com.jfl.appointment.dashboard.dto.CreatePatientRequest;
-import com.jfl.appointment.dashboard.dto.PatientResponseDto;
+import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
 import com.jfl.appointment.dashboard.service.PatientService;
 import jakarta.validation.Valid;
@@ -59,6 +56,44 @@ public class PatientController {
                 .body(
                         ApiResponse.success(
                                 "Patient created successfully.",
+                                response
+                        )
+                );
+    }
+
+    @PreAuthorize("""
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN',
+            'STAFF',
+            'DOCTOR'
+        )
+        """)
+    @PutMapping("/{patientId}")
+    public ResponseEntity<ApiResponse<PatientResponseDto>> updatePatient(
+            @PathVariable Long clinicId,
+            @PathVariable Long patientId,
+            @Valid @RequestBody UpdatePatientRequest request) {
+
+        log.info(
+                "Updating patient. clinicId={}, patientId={}, name={}, whatsapp={}",
+                clinicId,
+                patientId,
+                request.name(),
+                request.whatsappNumber()
+        );
+
+        PatientResponseDto response =
+                patientService.updatePatient(
+                        clinicId,
+                        patientId,
+                        request
+                );
+
+        return ResponseEntity
+                .ok(
+                        ApiResponse.success(
+                                "Patient updated successfully.",
                                 response
                         )
                 );

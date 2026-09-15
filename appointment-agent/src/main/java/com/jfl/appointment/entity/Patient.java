@@ -39,4 +39,8 @@ public class Patient {
     @Enumerated(EnumType.STRING)
     @Column(name = "source", nullable = true)
     private PatientSource source;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "profile_status", nullable = false, length = 20)
+    private PatientProfileStatus profileStatus = PatientProfileStatus.INCOMPLETE;
 }

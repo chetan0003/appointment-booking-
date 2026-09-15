@@ -1,14 +1,11 @@
 package com.jfl.appointment.service;
 
-import com.jfl.appointment.dto.PatientQrResponse;
-import com.jfl.appointment.dto.WhatsAppQrResolveResponse;
+import com.jfl.appointment.dto.ClinicQrResponse;
 import com.jfl.appointment.entity.*;
-
 import com.jfl.appointment.exception.NotFoundException;
+import com.jfl.appointment.repository.ClinicQrCredentialRepository;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ClinicWhatsAppConfigRepository;
-import com.jfl.appointment.repository.PatientQrCredentialRepository;
-import com.jfl.appointment.repository.PatientRepository;
 import com.jfl.appointment.util.AESUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -20,22 +17,20 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
-public class PatientQrService {
+public class ClinicQrService {
 
-    private final PatientRepository patientRepository;
+
     private final ClinicRepository clinicRepository;
-    private final PatientQrCredentialRepository qrRepository;
+    private final ClinicQrCredentialRepository qrRepository;
     private final ClinicWhatsAppConfigRepository clinicWhatsAppConfigRepository;
     private final PatientQrTokenService tokenService;
     private final WhatsAppQrLinkService whatsAppQrLinkService;
     private final QrCodeGeneratorService qrCodeGeneratorService;
     private final AESUtil aesUtil;
 
-
     @Transactional
-    public PatientQrResponse generateQr(
-            Long clinicId,
-            Long patientId
+    public ClinicQrResponse generateQr(
+            Long clinicId
     ) {
 
         // ============================================================
@@ -48,31 +43,6 @@ public class PatientQrService {
                                 "Clinic not found with id: " + clinicId
                         )
                 );
-
-
-        // ============================================================
-        // 2. VALIDATE PATIENT
-        // ============================================================
-
-        Patient patient = patientRepository.findById(patientId)
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Patient not found with id: " + patientId
-                        )
-                );
-
-
-        // ============================================================
-        // 3. PATIENT MUST BELONG TO THIS CLINIC
-        // ============================================================
-
-        if (patient.getClinic() == null ||
-                !patient.getClinic().getId().equals(clinicId)) {
-
-            throw new IllegalArgumentException(
-                    "Patient does not belong to this clinic"
-            );
-        }
 
 
         // ============================================================
@@ -106,17 +76,17 @@ public class PatientQrService {
         // 6. CHECK EXISTING ACTIVE QR
         // ============================================================
 
-        Optional<PatientQrCredential> existingQrOptional =
+        Optional<ClinicQrCredential> existingQrOptional =
                 qrRepository
-                        .findFirstByPatientIdAndStatusOrderByCreatedAtDesc(
-                                patientId,
-                                PatientQrStatus.ACTIVE
+                        .findFirstByClinicIdAndStatusOrderByCreatedAtDesc(
+                                clinicId,
+                                ClinicQrStatus.ACTIVE
                         );
 
 
         if (existingQrOptional.isPresent()) {
 
-            PatientQrCredential existingQr =
+            ClinicQrCredential existingQr =
                     existingQrOptional.get();
 
 
@@ -154,10 +124,10 @@ public class PatientQrService {
 
                     String whatsappUrl =
                             whatsAppQrLinkService.generateLink(
-                                     clinicId,
+                                    clinicId,
                                     whatsappConfig.getWhatsappNumber(),
                                     rawToken,
-                                    false
+                                    true
                             );
 
 
@@ -175,8 +145,7 @@ public class PatientQrService {
 
 
                     // Return SAME QR
-                    return new PatientQrResponse(
-                            patient.getId(),
+                    return new ClinicQrResponse(
                             clinic.getId(),
                             existingQr.getId(),
                             existingQr.getStatus().name(),
@@ -201,7 +170,7 @@ public class PatientQrService {
                  */
 
                 existingQr.setStatus(
-                        PatientQrStatus.EXPIRED
+                        ClinicQrStatus.EXPIRED
                 );
 
                 qrRepository.save(existingQr);
@@ -215,7 +184,7 @@ public class PatientQrService {
             if (expired) {
 
                 existingQr.setStatus(
-                        PatientQrStatus.EXPIRED
+                        ClinicQrStatus.EXPIRED
                 );
 
                 qrRepository.save(existingQr);
@@ -243,10 +212,10 @@ public class PatientQrService {
         // 12. CREATE NEW QR CREDENTIAL
         // ============================================================
 
-        PatientQrCredential credential =
-                new PatientQrCredential();
+        ClinicQrCredential credential =
+                new ClinicQrCredential();
 
-        credential.setPatient(patient);
+        credential.setClinic(clinic);
 
         credential.setTokenHash(tokenHash);
 
@@ -259,7 +228,7 @@ public class PatientQrService {
         );
 
         credential.setStatus(
-                PatientQrStatus.ACTIVE
+                ClinicQrStatus.ACTIVE
         );
 
         credential.setCreatedAt(
@@ -282,7 +251,7 @@ public class PatientQrService {
         // 13. SAVE QR CREDENTIAL
         // ============================================================
 
-        PatientQrCredential savedCredential =
+        ClinicQrCredential savedCredential =
                 qrRepository.save(credential);
 
 
@@ -295,7 +264,7 @@ public class PatientQrService {
                         clinicId,
                         whatsappConfig.getWhatsappNumber(),
                         rawToken,
-                        false
+                        true
                 );
 
 
@@ -324,8 +293,7 @@ public class PatientQrService {
         // 17. RETURN RESPONSE
         // ============================================================
 
-        return new PatientQrResponse(
-                patient.getId(),
+        return new ClinicQrResponse(
                 clinic.getId(),
                 savedCredential.getId(),
                 savedCredential.getStatus().name(),
@@ -334,137 +302,6 @@ public class PatientQrService {
                 qrImageBase64,
                 savedCredential.getCreatedAt(),
                 savedCredential.getExpiresAt()
-        );
-    }
-
-
-    @Transactional
-    public void revokeQr(
-            Long clinicId,
-            Long patientId
-    ) {
-
-        Patient patient =
-                patientRepository.findById(patientId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Patient not found with id: "
-                                                + patientId
-                                )
-                        );
-
-
-        if (!patient.getClinic().getId().equals(clinicId)) {
-
-            throw new IllegalArgumentException(
-                    "Patient does not belong to this clinic"
-            );
-        }
-
-
-        qrRepository
-                .findFirstByPatientIdAndStatusOrderByCreatedAtDesc(
-                        patientId,
-                        PatientQrStatus.ACTIVE
-                )
-                .ifPresentOrElse(
-
-                        qr -> {
-
-                            qr.setStatus(
-                                    PatientQrStatus.REVOKED
-                            );
-
-                            qr.setRevokedAt(
-                                    LocalDateTime.now()
-                            );
-
-                            qrRepository.save(qr);
-                        },
-
-                        () -> {
-                            throw new NotFoundException(
-                                    "Active QR not found for patient"
-                            );
-                        }
-                );
-    }
-
-
-    @Transactional(readOnly = true)
-    public WhatsAppQrResolveResponse resolveQr(
-            String rawToken
-    ) {
-
-        if (rawToken == null ||
-                rawToken.isBlank()) {
-
-            return new WhatsAppQrResolveResponse(
-                    false,
-                    null,
-                    null,
-                    null,
-                    "QR token is required"
-            );
-        }
-
-
-        // Hash received token
-        String tokenHash =
-                tokenService.hashToken(rawToken);
-
-
-        // Find active QR
-        PatientQrCredential credential =
-                qrRepository
-                        .findByTokenHashAndStatus(
-                                tokenHash,
-                                PatientQrStatus.ACTIVE
-                        )
-                        .orElse(null);
-
-
-        if (credential == null) {
-
-            return new WhatsAppQrResolveResponse(
-                    false,
-                    null,
-                    null,
-                    null,
-                    "Invalid or revoked QR"
-            );
-        }
-
-
-        // Check expiry
-        if (credential.getExpiresAt() != null &&
-                credential.getExpiresAt()
-                        .isBefore(LocalDateTime.now())) {
-
-            return new WhatsAppQrResolveResponse(
-                    false,
-                    null,
-                    null,
-                    null,
-                    "QR has expired"
-            );
-        }
-
-
-        Patient patient =
-                credential.getPatient();
-
-
-        Clinic clinic =
-                patient.getClinic();
-
-
-        return new WhatsAppQrResolveResponse(
-                true,
-                patient.getId(),
-                clinic.getId(),
-                patient.getName(),
-                "Patient identified successfully"
         );
     }
 
@@ -482,4 +319,5 @@ public class PatientQrService {
 
         return aesUtil.decrypt(encryptedToken);
     }
+
 }

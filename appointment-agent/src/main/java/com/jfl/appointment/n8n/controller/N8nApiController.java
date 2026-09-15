@@ -3,6 +3,7 @@ package com.jfl.appointment.n8n.controller;
 
 import com.jfl.appointment.n8n.dto.ClinicWhatsappConfigDto;
 import com.jfl.appointment.n8n.dto.IdentifyByTokenRequest;
+import com.jfl.appointment.n8n.dto.IdentifyClinicResponse;
 import com.jfl.appointment.n8n.dto.IdentifyPatientResponse;
 import com.jfl.appointment.n8n.service.AppointmentService;
 import com.jfl.appointment.n8n.service.AvailabilityService;
@@ -42,6 +43,11 @@ public class N8nApiController {
     @PostMapping("/patients/identify-by-token")
     public IdentifyPatientResponse identifyByToken(@Valid @RequestBody IdentifyByTokenRequest request) {
         return n8nSupportService.identifyByToken(request.clinicId(), request.token());
+    }
+
+    @PostMapping("/clinics/identify-by-token")
+    public IdentifyClinicResponse clinicIdentifyByToken(@Valid @RequestBody IdentifyByTokenRequest request) {
+        return n8nSupportService.clinicIdentifyByToken(request.clinicId(), request.token());
     }
 
     // --- Delegates: session lookup/update (same logic as SessionController) ---

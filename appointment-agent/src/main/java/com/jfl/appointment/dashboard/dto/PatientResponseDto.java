@@ -9,6 +9,8 @@ public record PatientResponseDto(
         String email,
         LocalDate dateOfBirth,
         Long clinicId,
-        String gender
+        String gender,
+        String source,
+        String patientProfileStatus
 ) {
 }
