@@ -1,6 +1,7 @@
 spring:
   datasource:
-    url: jdbc:postgresql://postgres:5432/appointment
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:appointment}
+#    url: jdbc:postgresql://localhost:5432/appointment_agent
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:root}
     hikari:
@@ -36,5 +37,30 @@ logging:
 
 security:
   jwt:
-    secret: ${JWT_SECRET:YnJlYXRoZWNhcmJvbm1lYW50YWN0aW9ubGF0ZXJsaXZpbmdmb3JtbGVhdGhlcmRlc2U=}
-    expiration: 3600000
+    secret: ${JWT_SECRET}
+    expiration: ${JWT_TOKEN_EXP:3600000}
+
+
+meta:
+  app-id: ${META_APP_ID:235569knknknhkh}
+  app-secret: ${META_APP_SECRET:54gjgcfdjgkgkgkgfjfj}
+  graph-api-url: https://graph.facebook.com/v20.0
+
+app:
+  encryption:
+    key: ${APP_ENCRYPTION_KEY}
+  qr:
+    base-url: http://localhost:5173
+    width: 400
+    height: 400
+
+
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health
+
+    endpoint:
+      health:
+        show-details: never
