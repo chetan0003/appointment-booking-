@@ -14,6 +14,10 @@ public class CorsConfig implements WebMvcConfigurer {
         registry
                 .addMapping("/**")
                 .allowedOrigins(
+                        "http://app.holamd.app",
+                        "https://app.holamd.app/",
+                        "https://n8n.holamd.app/",
+                        "http://n8n.holamd.app/",
                         "http://localhost:3000",
                         "https://localhost:5173",
                         "http://localhost:5500",
