@@ -13,6 +13,7 @@ import com.jfl.appointment.util.AESUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -25,18 +26,19 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WhatsAppIntegrationService {
 
+    private final Environment environment;
     private final RestClient restClient;
     private final ClinicRepository clinicRepository;
     private final ClinicWhatsAppConfigRepository clinicWhatsAppConfigRepository;
 
-    @Value("${meta.app-id}")
-    private String appId;
-
-    @Value("${meta.app-secret}")
-    private String appSecret;
-
-    @Value("${meta.graph-api-url}")
-    private String graphApiUrl;
+//    @Value("${meta.app-id}")
+//    private String appId;
+//
+//    @Value("${meta.app-secret}")
+//    private String appSecret;
+//
+//    @Value("${meta.graph-api-url}")
+//    private String graphApiUrl;
 
 
     public void connectWhatsApp(String code, Long clinicId) {
@@ -62,8 +64,8 @@ public class WhatsAppIntegrationService {
 
     private String exchangeCodeForAccessToken(String code) {
         JsonNode response = restClient.get()
-                .uri(graphApiUrl + "/oauth/access_token?client_id={appId}&client_secret={appSecret}&code={code}",
-                        appId, appSecret, code)
+                .uri(environment.getProperty("meta.graph-api-url") + "/oauth/access_token?client_id={appId}&client_secret={appSecret}&code={code}",
+                        environment.getProperty("meta.app-id"), environment.getProperty("meta.app-secret"), code)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -73,7 +75,7 @@ public class WhatsAppIntegrationService {
 
     private Map<String, String> fetchPhoneNumberDetails(String wabaId, String userAccessToken) {
         JsonNode response = restClient.get()
-                .uri(graphApiUrl + "/{wabaId}/phone_numbers", wabaId)
+                .uri(environment.getProperty("meta.graph-api-url") + "/{wabaId}/phone_numbers", wabaId)
                 .header("Authorization", "Bearer " + userAccessToken)
                 .retrieve()
                 .body(JsonNode.class);
@@ -87,10 +89,10 @@ public class WhatsAppIntegrationService {
     }
 
     private Map<String, String> fetchMetaAccountIds(String userAccessToken) {
-        String appAccessToken = appId + "|" + appSecret;
+        String appAccessToken = environment.getProperty("meta.app-id") + "|" + environment.getProperty("meta.app-secret");
 
         JsonNode response = restClient.get()
-                .uri(graphApiUrl + "/debug_token?input_token={userToken}&access_token={appToken}",
+                .uri(environment.getProperty("meta.graph-api-url") + "/debug_token?input_token={userToken}&access_token={appToken}",
                         userAccessToken, appAccessToken)
                 .retrieve()
                 .body(JsonNode.class);
@@ -118,7 +120,7 @@ public class WhatsAppIntegrationService {
 
     private void subscribeAppToWaba(String wabaId, String userAccessToken) {
         restClient.post()
-                .uri(graphApiUrl + "/{wabaId}/subscribed_apps", wabaId)
+                .uri(environment.getProperty("meta.graph-api-url") + "/{wabaId}/subscribed_apps", wabaId)
                 .header("Authorization", "Bearer " + userAccessToken)
                 .retrieve()
                 .toBodilessEntity();
@@ -220,7 +222,7 @@ public class WhatsAppIntegrationService {
     }
     private String fetchBusinessIdFromWaba(String wabaId, String userAccessToken) {
         JsonNode response = restClient.get()
-                .uri(graphApiUrl + "/{wabaId}?fields=owner_business_info", wabaId)
+                .uri(environment.getProperty("meta.graph-api-url") + "/{wabaId}?fields=owner_business_info", wabaId)
                 .header("Authorization", "Bearer " + userAccessToken)
                 .retrieve()
                 .body(JsonNode.class);
