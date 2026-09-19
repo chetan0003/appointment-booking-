@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Entity
 @Table(name = "patient")
 @Getter
@@ -23,4 +25,22 @@ public class Patient {
 
     @Column(name = "whatsapp_number", nullable = false)
     private String whatsappNumber;
+
+    @Column(name = "email")
+    private String email;
+
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "gender", length = 20)
+    private Gender gender;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = true)
+    private PatientSource source;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "profile_status", nullable = false, length = 20)
+    private PatientProfileStatus profileStatus = PatientProfileStatus.INCOMPLETE;
 }

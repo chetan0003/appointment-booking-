@@ -1,18 +1,42 @@
 package com.jfl.appointment.repository;
 
 import com.jfl.appointment.entity.ConversationSession;
+import com.jfl.appointment.entity.ConversationState;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.Optional;
 
 public interface ConversationSessionRepository extends JpaRepository<ConversationSession, Long> {
 
-    @Query("select s from ConversationSession s where s.clinic.id = :clinicId " +
-           "and s.whatsappNumber = :whatsappNumber " +
-           "and s.state not in (com.jfl.appointment.entity.ConversationState.BOOKED, " +
-           "                    com.jfl.appointment.entity.ConversationState.ABANDONED)")
+//    @Query("select s from ConversationSession s where s.clinic.id = :clinicId " +
+//           "and s.whatsappNumber = :whatsappNumber " +
+//           "and s.state not in (com.jfl.appointment.entity.ConversationState.BOOKED, " +
+//           "                    com.jfl.appointment.entity.ConversationState.ABANDONED)")
+//    Optional<ConversationSession> findActiveSession(
+//            @Param("clinicId") Long clinicId, @Param("whatsappNumber") String whatsappNumber);
+
+    @Query("""
+            select s
+            from ConversationSession s
+            where s.clinic.id = :clinicId
+              and s.patient.id = :patientId
+              and s.whatsappNumber = :whatsappNumber
+              and s.state not in (
+                  com.jfl.appointment.entity.ConversationState.BOOKED,
+                  com.jfl.appointment.entity.ConversationState.ABANDONED
+              )
+            """)
     Optional<ConversationSession> findActiveSession(
-            @Param("clinicId") Long clinicId, @Param("whatsappNumber") String whatsappNumber);
+            @Param("clinicId") Long clinicId,
+            @Param("patientId") Long patientId,
+            @Param("whatsappNumber") String whatsappNumber
+    );
+
+    Optional<ConversationSession> findTopByWhatsappNumberAndStateNotInOrderByUpdatedAtDesc(
+            String whatsappNumber,
+            Collection<ConversationState> states
+    );
 }

@@ -17,5 +17,7 @@ public record AppointmentListItemDto(
         Long serviceId,
         String serviceName,
         String patientName,
-        String patientPhone
+        String patientPhone,
+        Long followUpAppointmentId,
+        LocalDate suggestedFollowUpDate
 ) {}

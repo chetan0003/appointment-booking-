@@ -49,4 +49,13 @@ public class Appointment {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AppointmentStatus status = AppointmentStatus.CONFIRMED;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "follow_up_of_appointment_id"
+    )
+    private Appointment followUpOfAppointment;
+
+    @Column(name = "suggested_follow_up_date")
+    private LocalDate suggestedFollowUpDate;
 }

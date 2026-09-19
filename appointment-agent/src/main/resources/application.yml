@@ -1,28 +1,60 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/appointment_agent
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:root}
+    url: "jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:holamd_dev_db}"
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      pool-name: AppointmentAgentPool
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000          # 5 min - close idle connections beyond minimum-idle
+      max-lifetime: 1800000         # 30 min - recycle connections before DB/infra kills them
+      connection-timeout: 30000     # 30 sec - fail fast if pool is exhausted
+      validation-timeout: 5000
+      leak-detection-threshold: 60000   # warn if a connection is held > 60s
   jpa:
+    # Ensures compatibility across PostgreSQL versions
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: validate   # schema is owned by schema.sql / migrations, not Hibernate
+      ddl-auto: update            # Auto-creates/updates tables in holamd_dev_db
     open-in-view: false
     properties:
       hibernate:
         jdbc:
+          batch_size: 25
 
   sql:
     init:
-      mode: never          # we run schema.sql manually / via flyway later, not on every boot
+      mode: never                   # Disable default Spring SQL init
+
 
 server:
   port: 8080
 
+# Moved to root level (was incorrectly nested under 'app')
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
 logging:
   level:
     com.jfl.appointment: DEBUG
+    com.zaxxer.hikari: INFO
 
 security:
   jwt:
-    secret: ${JWT_SECRET:YnJlYXRoZWNhcmJvbm1lYW50YWN0aW9ubGF0ZXJsaXZpbmdmb3JtbGVhdGhlcmRlc2U=}
-    expiration: 3600000
+    secret: ${JWT_SECRET}
+    expiration: ${JWT_TOKEN_EXP:3600000}
+
+app:
+  encryption:
+    key: ${APP_ENCRYPTION_KEY}
+  qr:
+    base-url: ${QR_BASE_URL:http://localhost:5173}
+    width: 400
+    height: 400
