@@ -13,7 +13,9 @@ public class CorsConfig implements WebMvcConfigurer {
 
         registry
                 .addMapping("/**")
+                .allowedOriginPatterns("https://*.trycloudflare.com")
                 .allowedOrigins(
+                        "http://host.docker.internal:3000",
                         "http://app.holamd.app",
                         "https://app.holamd.app/",
                         "https://n8n.holamd.app/",

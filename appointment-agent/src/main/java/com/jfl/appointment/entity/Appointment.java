@@ -50,6 +50,10 @@ public class Appointment {
     @Column(nullable = false)
     private AppointmentStatus status = AppointmentStatus.CONFIRMED;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = true)
+    private PatientSource source;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name = "follow_up_of_appointment_id"
