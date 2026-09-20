@@ -418,7 +418,7 @@ public class AppointmentAdminService {
         nextAppointment.setStatus(
                 AppointmentStatus.CONFIRMED
         );
-        //nextAppointment.setSource(PatientSource.DASHBOARD);
+        nextAppointment.setSource(PatientSource.DASHBOARD);
         // IMPORTANT:
         // Link new appointment to previous appointment
 
