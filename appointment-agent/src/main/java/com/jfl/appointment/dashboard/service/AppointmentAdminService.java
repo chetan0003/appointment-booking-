@@ -232,7 +232,7 @@ public class AppointmentAdminService {
         appointment.setStatus(
                 AppointmentStatus.CONFIRMED
         );
-
+        appointment.setSource(PatientSource.DASHBOARD);
         // Normal appointment
         appointment.setFollowUpOfAppointment(null);
 
@@ -418,7 +418,7 @@ public class AppointmentAdminService {
         nextAppointment.setStatus(
                 AppointmentStatus.CONFIRMED
         );
-
+        //nextAppointment.setSource(PatientSource.DASHBOARD);
         // IMPORTANT:
         // Link new appointment to previous appointment
 

@@ -115,6 +115,7 @@ public class AppointmentService {
         appointment.setAppointmentDate(request.appointmentDate());
         appointment.setStartTime(request.startTime());
         appointment.setEndTime(request.startTime().plusMinutes(service.getDurationMinutes()));
+        appointment.setSource(PatientSource.WHATSAPP);
         appointment.setStatus(AppointmentStatus.CONFIRMED);
 
         // Step 4: insert. uq_doctor_slot_active (partial unique index) is the

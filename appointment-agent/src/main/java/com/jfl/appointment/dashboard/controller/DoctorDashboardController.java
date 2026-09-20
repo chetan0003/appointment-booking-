@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -42,11 +43,11 @@ public class DoctorDashboardController {
             allEntries = true
     )
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @PostMapping
     public ResponseEntity<ApiResponse<DoctorDto>> createDoctor(
             @PathVariable Long clinicId,
@@ -140,11 +141,11 @@ public class DoctorDashboardController {
             key = "#clinicId"
     )
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @PutMapping("/{doctorId}")
     public ResponseEntity<ApiResponse<DoctorDto>> updateDoctor(
             @PathVariable Long clinicId,
@@ -240,13 +241,13 @@ public class DoctorDashboardController {
     }
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN',
-            'STAFF',
-            'DOCTOR'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN',
+                'STAFF',
+                'DOCTOR'
+            )
+            """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<DoctorDto>>> getDoctors(
             @PathVariable Long clinicId,
@@ -305,11 +306,11 @@ public class DoctorDashboardController {
             key = "#doctorId"
     )
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @PostMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> createOrUpdateAvailability(
             @PathVariable Long clinicId,
@@ -546,6 +547,85 @@ public class DoctorDashboardController {
                                 response
                         )
                 );
+    }
+
+    @Cacheable(
+            value = "doctorAvailability",
+            key = "#doctorId"
+    )
+    @PreAuthorize("""
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN',
+                'STAFF',
+                'DOCTOR'
+            )
+            """)
+    @GetMapping("/{doctorId}/availability")
+    public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> getDoctorAvailability(
+            @PathVariable Long clinicId,
+            @PathVariable Long doctorId) {
+
+        log.info(
+                "Get doctor availability. clinicId={}, doctorId={}",
+                clinicId,
+                doctorId
+        );
+
+        // --------------------------------------------------
+        // 1. Validate doctor and clinic
+        // --------------------------------------------------
+        Doctor doctor =
+                doctorRepository
+                        .findById(doctorId)
+                        .filter(d ->
+                                d.getClinic()
+                                        .getId()
+                                        .equals(clinicId)
+                        )
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Doctor not found: " + doctorId
+                                )
+                        );
+
+        // --------------------------------------------------
+        // 2. Get active availability
+        // --------------------------------------------------
+        List<DoctorAvailability> availabilityList =
+                doctorAvailabilityRepository
+                        .findByDoctorIdAndActiveTrueOrderByDayOfWeekAsc(
+                                doctorId
+                        );
+
+        // --------------------------------------------------
+        // 3. Convert to DTO
+        // --------------------------------------------------
+        List<DoctorAvailabilityDto> response =
+                availabilityList.stream()
+                        .map(availability ->
+                                new DoctorAvailabilityDto(
+                                        availability.getId(),
+                                        doctor.getId(),
+                                        availability.getDayOfWeek().name(),
+                                        availability.getStartTime(),
+                                        availability.getEndTime(),
+                                        availability.getBreakStartTime(),
+                                        availability.getBreakEndTime(),
+                                        availability.isActive()
+                                )
+                        )
+                        .toList();
+
+        // --------------------------------------------------
+        // 4. Return response
+        // --------------------------------------------------
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Doctor availability fetched successfully.",
+                        response
+                )
+        );
     }
 
     @DeleteMapping("/{doctorId}/delete")

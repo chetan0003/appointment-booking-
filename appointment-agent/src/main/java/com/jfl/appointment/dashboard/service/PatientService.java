@@ -53,18 +53,18 @@ public class PatientService {
         // 2. Validate duplicate WhatsApp number
         // =====================================================
 
-        boolean exists =
-                patientRepository
-                        .existsByClinicIdAndWhatsappNumber(
-                                clinicId,
-                                request.whatsappNumber()
-                        );
-
-        if (exists) {
-            throw new IllegalArgumentException(
-                    "A patient with this WhatsApp number already exists."
-            );
-        }
+//        boolean exists =
+//                patientRepository
+//                        .existsByClinicIdAndWhatsappNumber(
+//                                clinicId,
+//                                request.whatsappNumber()
+//                        );
+//
+//        if (exists) {
+//            throw new IllegalArgumentException(
+//                    "A patient with this WhatsApp number already exists."
+//            );
+//        }
 
         // =====================================================
         // 3. Validate DOB
@@ -230,7 +230,8 @@ public class PatientService {
         return patientRepository
                 .searchPatients(
                         clinicId,
-                        searchQuery
+                        searchQuery,
+                        PatientProfileStatus.INCOMPLETE
                 )
                 .stream()
                 .map(this::toDto)
