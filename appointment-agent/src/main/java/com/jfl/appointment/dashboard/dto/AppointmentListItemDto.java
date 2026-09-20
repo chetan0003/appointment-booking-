@@ -12,6 +12,7 @@ public record AppointmentListItemDto(
         LocalTime startTime,
         LocalTime endTime,
         AppointmentStatus status,
+        String source,
         Long doctorId,
         String doctorName,
         Long serviceId,
