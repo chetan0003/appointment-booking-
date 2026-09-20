@@ -627,6 +627,7 @@ public class AppointmentAdminService {
                 a.getStartTime(),
                 a.getEndTime(),
                 a.getStatus(),
+                a.getSource() != null ? a.getSource().name() : null,
                 a.getDoctor().getId(),
                 a.getDoctor().getName(),
                 a.getService().getId(),
