@@ -230,4 +230,56 @@ public class GlobalExceptionHandler {
                         )
                 );
     }
+
+
+    @ExceptionHandler(SubscriptionLimitExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleLimitExceed(
+            SubscriptionLimitExceededException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(
+                        new ApiErrorResponse(
+                                "LIMIT EXCEED",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(SubscriptionRequiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleSubscriptionError(
+            SubscriptionRequiredException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(
+                        new ApiErrorResponse(
+                                "NO SUBSCRIPTION",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(SubscriptionFeatureNotAvailableException.class)
+    public ResponseEntity<ApiErrorResponse> handleSubscriptionFeatureError(
+            SubscriptionFeatureNotAvailableException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(
+                        new ApiErrorResponse(
+                                "NO FEATURE AVAILABLE",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
 }

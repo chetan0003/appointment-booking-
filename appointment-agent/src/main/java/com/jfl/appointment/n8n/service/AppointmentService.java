@@ -8,6 +8,7 @@ import com.jfl.appointment.n8n.dto.AppointmentResponse;
 import com.jfl.appointment.n8n.dto.CreateAppointmentRequest;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
+import com.jfl.appointment.service.SubscriptionFeatureService;
 import com.jfl.appointment.util.Constants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +34,7 @@ public class AppointmentService {
     private final AvailabilityService availabilityService;
     private final ConversationSessionService sessionService;
     private final NotificationSchedulingService notificationSchedulingService;
+    private final SubscriptionFeatureService subscriptionFeatureService;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -52,6 +54,16 @@ public class AppointmentService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
         log.info("createAppointment: {},{},{}",request.clinicId(), request.patientName(),request.appointmentDate());
+
+        //VALIDATE SUBSCRIPTION PLAN
+//        subscriptionFeatureService.validateFeature(
+//                request.clinicId(),
+//                SubscriptionFeature.APPOINTMENTS
+//        );
+        subscriptionFeatureService.validateFeatureOnWhats(
+                request.clinicId()
+        );
+
         if (request.qrType().isBlank())
             new NotFoundException("QRType param is missing: " + request.clinicId());
         Clinic clinic = clinicRepository.findById(request.clinicId())

@@ -44,4 +44,16 @@ public interface ClinicUserRepository
                 WHERE cu.user.id = :userId
             """)
     Optional<ClinicUser> findByUserIdWithClinic(@Param("userId") Long userId);
+
+    @Query("""
+                SELECT COUNT(DISTINCT u)
+                FROM ClinicUser u
+                JOIN u.user.roles r
+                WHERE u.clinic.id = :clinicId
+                  AND r.name = :roleName
+            """)
+    long countUsersByClinicAndRole(
+            @Param("clinicId") Long clinicId,
+            @Param("roleName") String roleName
+    );
 }

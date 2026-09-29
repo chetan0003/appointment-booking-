@@ -5,6 +5,7 @@ import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.DoctorDto;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.service.SubscriptionFeatureService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class DoctorDashboardController {
     private final ServiceOfferingRepository serviceRepository;
     private final DoctorServiceRepository doctorServiceRepository;
     private final DoctorAvailabilityRepository doctorAvailabilityRepository;
+    private final SubscriptionFeatureService subscriptionFeatureService;
 
 
     @Transactional
@@ -61,15 +63,22 @@ public class DoctorDashboardController {
         );
 
         // --------------------------------------------------
+        // 1. Validate Feature
+        // --------------------------------------------------
+        subscriptionFeatureService.validateFeature(
+                clinicId,
+                SubscriptionFeature.DOCTORS
+        );
+        // --------------------------------------------------
         // 1. Validate clinic
         // --------------------------------------------------
-        Clinic clinic =
-                clinicRepository.findById(clinicId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Clinic not found: " + clinicId
-                                )
-                        );
+//        Clinic clinic =
+//                clinicRepository.findById(clinicId)
+//                        .orElseThrow(() ->
+//                                new NotFoundException(
+//                                        "Clinic not found: " + clinicId
+//                                )
+//                        );
 
         // --------------------------------------------------
         // 2. Validate service

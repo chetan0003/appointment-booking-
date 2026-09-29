@@ -94,7 +94,10 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/**"
                         ).permitAll()
-
+                        .requestMatchers("/api/subscription-plans")
+                        .permitAll()
+                        .requestMatchers("/api/subscription-plans/**")
+                        .permitAll()
                         // Public WhatsApp/n8n APIs
                         .requestMatchers(
                                 "/api/clinics/*/services",
