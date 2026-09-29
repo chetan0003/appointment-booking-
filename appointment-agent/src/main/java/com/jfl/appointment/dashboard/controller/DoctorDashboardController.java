@@ -61,6 +61,10 @@ public class DoctorDashboardController {
                 request.name(),
                 request.serviceId()
         );
+
+        // --------------------------------------------------
+        // 1. Validate Feature
+        // --------------------------------------------------
         subscriptionFeatureService.validateFeature(
                 clinicId,
                 SubscriptionFeature.DOCTORS
@@ -68,13 +72,13 @@ public class DoctorDashboardController {
         // --------------------------------------------------
         // 1. Validate clinic
         // --------------------------------------------------
-        Clinic clinic =
-                clinicRepository.findById(clinicId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Clinic not found: " + clinicId
-                                )
-                        );
+//        Clinic clinic =
+//                clinicRepository.findById(clinicId)
+//                        .orElseThrow(() ->
+//                                new NotFoundException(
+//                                        "Clinic not found: " + clinicId
+//                                )
+//                        );
 
         // --------------------------------------------------
         // 2. Validate service
