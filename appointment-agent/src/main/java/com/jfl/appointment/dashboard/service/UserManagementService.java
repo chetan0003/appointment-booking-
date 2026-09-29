@@ -8,6 +8,7 @@ import com.jfl.appointment.dashboard.dto.UserResponse;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -35,10 +36,16 @@ public class UserManagementService {
 
     private final SecurityContextService securityContextService;
     private final AppUserRepository appUserRepository;
+    private final SubscriptionFeatureService subscriptionFeatureService;
 
     @Transactional
     public AppUser createUser(
             CreateUserRequest request) {
+
+        subscriptionFeatureService.validateFeature(
+                request.clinicId(),
+                SubscriptionFeature.STAFF
+        );
 
         if (userRepository.existsByUsername(
                 request.username())) {

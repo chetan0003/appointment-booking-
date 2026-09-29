@@ -8,11 +8,14 @@ import com.jfl.appointment.n8n.service.AvailabilityService;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.SubscriptionFeatureService;
+import com.jfl.appointment.service.SubscriptionLimitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,7 +47,7 @@ public class AppointmentAdminService {
     private final AvailabilityService availabilityService;
     private final NotificationSchedulingService notificationSchedulingService;
     private final NotificationRepository notificationRepository;
-
+    private final SubscriptionFeatureService subscriptionFeatureService;
     @Transactional
     public AppointmentListItemDto createAppointment(
             Long clinicId,
@@ -58,6 +61,11 @@ public class AppointmentAdminService {
                 request.serviceId()
         );
 
+        //VALIDATE SUBSCRIPTION PLAN
+        subscriptionFeatureService.validateFeature(
+                clinicId,
+                SubscriptionFeature.APPOINTMENTS
+        );
         // Idempotency: if a request with this key already produced a booking, return it
         // instead of creating a duplicate (handles WhatsApp/n8n webhook retries).
         if (request.idempotencyKey() != null) {
@@ -269,6 +277,12 @@ public class AppointmentAdminService {
                 previousAppointmentId
         );
 
+        //VALIDATE SUBSCRIPTION PLAN
+        subscriptionFeatureService.validateFeature(
+                request.clinicId(),
+                SubscriptionFeature.APPOINTMENTS
+        );
+
         // =====================================================
         // 1. Get previous appointment
         // =====================================================
@@ -478,14 +492,27 @@ public class AppointmentAdminService {
                     clinicUser.getDoctor().getId();
         }
 
-        return appointmentRepository
-                .findForDashboard(
+//        if (from == null) {
+//            from = LocalDate.now().withDayOfMonth(1);
+//        }
+//
+//        if (to == null) {
+//            to = LocalDate.now()
+//                    .withDayOfMonth(LocalDate.now().lengthOfMonth());
+//        }
+
+        Specification<Appointment> specification =
+                AppointmentSpecification.forDashboard(
                         clinicId,
+                        from,
+                        to,
                         serviceId,
                         doctorId,
-                        status,
-                        pageable
-                )
+                        status
+                );
+
+        return appointmentRepository
+                .findAll(specification, pageable)
                 .map(this::toDto);
     }
 

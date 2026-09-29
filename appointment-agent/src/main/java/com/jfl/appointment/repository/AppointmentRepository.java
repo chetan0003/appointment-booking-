@@ -6,6 +6,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,7 +17,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
+        JpaSpecificationExecutor<Appointment> {
 
     List<Appointment> findByDoctorIdAndAppointmentDateAndStatus(
             Long doctorId, LocalDate appointmentDate, AppointmentStatus status);
@@ -50,15 +52,40 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             join fetch a.service
             join fetch a.patient
             where a.clinic.id = :clinicId
-              and (:serviceId is null or a.service.id = :serviceId)
-              and (:doctorId is null or a.doctor.id = :doctorId)
-              and (:status is null or a.status in :status)
+
+              and (
+                  coalesce(:from, null) is null
+                  or a.appointmentDate >= :from
+              )
+
+              and (
+                  coalesce(:to, null) is null
+                  or a.appointmentDate <= :to
+              )
+
+              and (
+                  :serviceId is null
+                  or a.service.id = :serviceId
+              )
+
+              and (
+                  :doctorId is null
+                  or a.doctor.id = :doctorId
+              )
+
+              and (
+                  :status is null
+                  or a.status = :status
+              )
+
             order by a.appointmentDate asc, a.startTime asc
             """)
     Page<Appointment> findForDashboard(
             @Param("clinicId") Long clinicId,
-            @Param("serviceId") Long serviceId,
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
             @Param("doctorId") Long doctorId,
+            @Param("serviceId") Long serviceId,
             @Param("status") AppointmentStatus status,
             Pageable pageable
     );
@@ -169,20 +196,35 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     );
 
     @Query("""
-    SELECT a.appointmentDate, COUNT(a)
-    FROM Appointment a
-    WHERE a.clinic.id = :clinicId
-      AND a.appointmentDate BETWEEN :fromDate AND :toDate
-      AND a.status NOT IN (
-          com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
-          com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
-      )
-    GROUP BY a.appointmentDate
-    ORDER BY a.appointmentDate
-    """)
+            SELECT a.appointmentDate, COUNT(a)
+            FROM Appointment a
+            WHERE a.clinic.id = :clinicId
+              AND a.appointmentDate BETWEEN :fromDate AND :toDate
+              AND a.status NOT IN (
+                  com.jfl.appointment.entity.AppointmentStatus.CANCELLED,
+                  com.jfl.appointment.entity.AppointmentStatus.NO_SHOW
+              )
+            GROUP BY a.appointmentDate
+            ORDER BY a.appointmentDate
+            """)
     List<Object[]> countAppointmentsByDate(
             @Param("clinicId") Long clinicId,
             @Param("fromDate") LocalDate fromDate,
             @Param("toDate") LocalDate toDate
+    );
+
+    @Query("""
+            SELECT COUNT(a)
+            FROM Appointment a
+            WHERE a.clinic.id = :clinicId
+              AND a.appointmentDate >= :startDate
+              AND a.appointmentDate <= :endDate
+              AND a.status <> :cancelledStatus
+            """)
+    long countAppointmentsForPeriod(
+            @Param("clinicId") Long clinicId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            @Param("cancelledStatus") AppointmentStatus cancelledStatus
     );
 }

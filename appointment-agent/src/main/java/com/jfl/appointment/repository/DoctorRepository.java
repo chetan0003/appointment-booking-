@@ -49,4 +49,6 @@ public interface DoctorRepository extends JpaRepository<Doctor, Long> {
 
     long countByClinicIdAndActiveTrue(Long clinicId);
 
+    long countByClinicId(Long clinicId);
+
 }

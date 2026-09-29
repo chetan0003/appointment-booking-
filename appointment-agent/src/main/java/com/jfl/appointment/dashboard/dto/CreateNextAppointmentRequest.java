@@ -14,6 +14,8 @@ public record CreateNextAppointmentRequest(
         LocalTime startTime,
 
         @NotNull
-        LocalTime endTime
+        LocalTime endTime,
+
+        Long clinicId
 ) {
 }

@@ -3,13 +3,11 @@ package com.jfl.appointment.dashboard.service;
 import com.jfl.appointment.dashboard.dto.CreatePatientRequest;
 import com.jfl.appointment.dashboard.dto.PatientResponseDto;
 import com.jfl.appointment.dashboard.dto.UpdatePatientRequest;
-import com.jfl.appointment.entity.Clinic;
-import com.jfl.appointment.entity.Patient;
-import com.jfl.appointment.entity.PatientProfileStatus;
-import com.jfl.appointment.entity.PatientSource;
+import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.PatientRepository;
+import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -30,11 +28,18 @@ public class PatientService {
 
     private final PatientRepository patientRepository;
     private final ClinicRepository clinicRepository;
+    private final SubscriptionFeatureService subscriptionFeatureService;
 
     @Transactional
     public PatientResponseDto createPatient(
             Long clinicId,
             CreatePatientRequest request) {
+
+        //VALIDATE SUBSCRIPTION PLAN
+        subscriptionFeatureService.validateFeature(
+                clinicId,
+                SubscriptionFeature.PATIENTS
+        );
 
         // =====================================================
         // 1. Validate clinic

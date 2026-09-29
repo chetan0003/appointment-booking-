@@ -134,21 +134,21 @@ public class AppointmentAdminController {
             @PageableDefault(size = 5, sort = "appointmentDate", direction = Sort.Direction.ASC)
             Pageable pageable) {
 
-        LocalDate resolvedFrom =
-                from != null
-                        ? from
-                        : LocalDate.now();
-
-        LocalDate resolvedTo =
-                to != null
-                        ? to
-                        : resolvedFrom;
+//        LocalDate resolvedFrom =
+//                from != null
+//                        ? from
+//                        : LocalDate.now();
+//
+//        LocalDate resolvedTo =
+//                to != null
+//                        ? to
+//                        : resolvedFrom;
 
         Page<AppointmentListItemDto> appointments =
                 appointmentAdminService.listAppointments(
                         clinicId,
-                        resolvedFrom,
-                        resolvedTo,
+                        from,
+                        to,
                         doctorId,
                         status,
                         serviceId,
@@ -254,6 +254,7 @@ public class AppointmentAdminController {
                 savedAppointment.getStartTime(),
                 savedAppointment.getEndTime(),
                 savedAppointment.getStatus(),
+                savedAppointment.getSource() != null ? savedAppointment.getSource().name() : null,
                 savedAppointment.getDoctor().getId(),
                 savedAppointment.getDoctor().getName(),
                 savedAppointment.getService().getId(),
