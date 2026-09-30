@@ -219,12 +219,10 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             WHERE a.clinic.id = :clinicId
               AND a.appointmentDate >= :startDate
               AND a.appointmentDate <= :endDate
-              AND a.status <> :cancelledStatus
             """)
     long countAppointmentsForPeriod(
             @Param("clinicId") Long clinicId,
             @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate,
-            @Param("cancelledStatus") AppointmentStatus cancelledStatus
+            @Param("endDate") LocalDate endDate
     );
 }

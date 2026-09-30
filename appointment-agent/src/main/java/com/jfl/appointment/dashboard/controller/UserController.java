@@ -20,7 +20,7 @@ public class UserController {
 
     @GetMapping()
     public UserResponse getUserDetail(@RequestParam("userName") String userName) {
-        log.info("user id");
+        log.info("getUserDetail of {}",userName);
         return userManagementService.getUserDetail(userName);
     }
 }

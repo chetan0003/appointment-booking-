@@ -9,12 +9,11 @@ public record UserResponse(
         String email,
         String firstName,
         String lastName,
-
         String role,
         String phone,
         boolean enabled,
-
         Long doctorId,
+        boolean isPlanActive,
         List<ClinicResponse> clinic
 
 ) {}

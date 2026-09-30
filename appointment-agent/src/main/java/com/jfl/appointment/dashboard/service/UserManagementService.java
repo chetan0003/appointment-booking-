@@ -7,7 +7,7 @@ import com.jfl.appointment.dashboard.dto.CreateUserRequest;
 import com.jfl.appointment.dashboard.dto.UserResponse;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.repository.*;
-import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicSubscriptionService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,29 +23,25 @@ import java.util.Optional;
 public class UserManagementService {
 
     private final AppUserRepository userRepository;
-
     private final RoleRepository roleRepository;
-
     private final ClinicUserRepository clinicUserRepository;
-
     private final ClinicRepository clinicRepository;
-
     private final DoctorRepository doctorRepository;
-
     private final PasswordEncoder passwordEncoder;
-
-    private final SecurityContextService securityContextService;
     private final AppUserRepository appUserRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final ClinicSubscriptionService clinicSubscriptionService;
 
     @Transactional
     public AppUser createUser(
             CreateUserRequest request) {
 
-        subscriptionFeatureService.validateFeature(
-                request.clinicId(),
-                SubscriptionFeature.STAFF
-        );
+        if (!RoleName.CLINIC_ADMIN.equals(request.role())) {
+            subscriptionFeatureService.validateFeature(
+                    request.clinicId(),
+                    SubscriptionFeature.STAFF
+            );
+        }
 
         if (userRepository.existsByUsername(
                 request.username())) {
@@ -153,7 +149,7 @@ public class UserManagementService {
         if (appUser.getRoles().stream()
                 .anyMatch(role -> RoleName.SUPER_ADMIN.equals(role.getName()))) {
             List<Clinic> all = clinicRepository.findAll();
-            return toDto(appUser, all, null);
+            return toDto(appUser, all, null,true);
         }
         Long doctorId = null;
         Optional<ClinicUser> byUserId = clinicUserRepository.findByUserIdWithClinic(appUser.getId());
@@ -162,17 +158,22 @@ public class UserManagementService {
             doctorId = byUserId.get().getDoctor().getId();
         }
         Clinic clinic = byUserId.get().getClinic();
-        return toDto(appUser, Arrays.asList(clinic), doctorId);
+        Boolean isPlanActive = clinicSubscriptionService.hasActiveSubscription(clinic.getId());
+        return toDto(appUser, Arrays.asList(clinic), doctorId, isPlanActive);
     }
 
     private ClinicUserDto toDto(ClinicUser s) {
         return new ClinicUserDto(s.getId(), s.getUser().getFirstName(), s.getUser().getEmail(), s.getUser().getRoles().stream().findFirst().get().getName().name(), s.getUser().isEnabled(), "Today");
     }
 
-    private UserResponse toDto(AppUser appUser, List<Clinic> clinicList, Long doctorId) {
+    private UserResponse toDto(AppUser appUser, List<Clinic> clinicList, Long doctorId, Boolean isPlanActive) {
         return new UserResponse(appUser.getId(), appUser.getUsername(), appUser.getEmail(),
                 appUser.getFirstName(), appUser.getLastName(),
-                appUser.getRoles().stream().findFirst().get().getName().name(), appUser.getPhone(), appUser.isEnabled(), doctorId, setClinicResponse(clinicList));
+                appUser.getRoles().stream().findFirst().get().getName().name(),
+                appUser.getPhone(), appUser.isEnabled(),
+                doctorId,
+                isPlanActive,
+                setClinicResponse(clinicList));
     }
 
     private List<ClinicResponse> setClinicResponse(List<Clinic> clinicList) {

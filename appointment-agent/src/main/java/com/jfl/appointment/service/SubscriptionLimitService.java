@@ -1,6 +1,5 @@
 package com.jfl.appointment.service;
 
-import com.jfl.appointment.entity.AppointmentStatus;
 import com.jfl.appointment.entity.ClinicSubscription;
 import com.jfl.appointment.entity.SubscriptionPlan;
 import com.jfl.appointment.entity.SubscriptionStatus;
@@ -57,8 +56,7 @@ public class SubscriptionLimitService {
                 appointmentRepository.countAppointmentsForPeriod(
                         clinicId,
                         startDate,
-                        endDate,
-                        AppointmentStatus.CANCELLED
+                        endDate
                 );
 
         if (appointmentCount >= limit) {

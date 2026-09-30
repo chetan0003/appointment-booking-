@@ -119,8 +119,7 @@ public class SubscriptionFeatureService {
                 appointmentRepository.countAppointmentsForPeriod(
                         clinicId,
                         subscription.getStartDate(),
-                        subscription.getEndDate(),
-                        AppointmentStatus.CANCELLED
+                        subscription.getEndDate()
                 );
 
         if (used >= limit) {

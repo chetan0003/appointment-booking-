@@ -7,19 +7,21 @@ import com.jfl.appointment.dto.SubmitPaymentRequest;
 import com.jfl.appointment.dto.VerifyPaymentRequest;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
-import com.jfl.appointment.repository.ClinicRepository;
+import com.jfl.appointment.repository.*;
 
-import com.jfl.appointment.repository.ClinicSubscriptionRepository;
-import com.jfl.appointment.repository.SubscriptionPaymentRepository;
-import com.jfl.appointment.repository.SubscriptionPlanRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -30,6 +32,10 @@ public class SubscriptionPaymentService {
     private final ClinicSubscriptionRepository subscriptionRepository;
     private final ClinicRepository clinicRepository;
     private final ClinicSubscriptionService subscriptionService;
+    private final EmailService emailService;
+    private final SecurityContextService securityContextService;
+    private final AppUserRepository appUserRepository;
+    private final ClinicUserRepository clinicUserRepository;
 
     /**
      * Clinic submits UPI transaction ID / UTR.
@@ -154,6 +160,15 @@ public class SubscriptionPaymentService {
         SubscriptionPayment saved =
                 paymentRepository.save(payment);
 
+        //send email to admin
+        Optional<AppUser> superadmin = appUserRepository.findByUsername("superadmin");
+        AppUser appUser = superadmin.get();
+        emailService.sendSubscriptionPaymentSubmittedEmail(appUser.getEmail(),
+                appUser.getFirstName(),
+                clinic.getName(),
+                plan.getName(),
+                request.transactionId(),
+                payment.getAmount());
         return toResponse(saved);
     }
 
@@ -207,7 +222,20 @@ public class SubscriptionPaymentService {
             subscriptionService.activateSubscription(
                     subscription
             );
+            Long paymentSubmitterId = payment.getCreatedBy();
 
+            appUserRepository.findById(paymentSubmitterId)
+                    .ifPresentOrElse(
+                            appUser -> emailService.sendSubscriptionActivatedEmail(
+                                    appUser.getEmail(),
+                                    appUser.getFirstName(),
+                                    subscription.getClinic().getName(),
+                                    subscription.getPlan().getName(),
+                                    LocalDate.now(),
+                                    LocalDate.now().plusDays(30)
+                            ),
+                            () -> log.warn("AppUser not found for id: {}", paymentSubmitterId)
+                    );
         } else {
 
             /*
@@ -228,6 +256,22 @@ public class SubscriptionPaymentService {
             subscription.setStatus(
                     SubscriptionStatus.PENDING
             );
+
+            Long paymentSubmitterId = payment.getCreatedBy();
+
+            appUserRepository.findById(paymentSubmitterId)
+                    .ifPresentOrElse(
+                            appUser -> emailService.sendSubscriptionPaymentRejectedEmail(
+                                    appUser.getEmail(),
+                                    appUser.getFirstName(),
+                                    subscription.getClinic().getName(),
+                                    subscription.getPlan().getName(),
+                                    payment.getTransactionId(),
+                                    payment.getAmount(),
+                                    request.rejectionReason()
+                            ),
+                            () -> log.warn("AppUser not found for id: {}", paymentSubmitterId)
+                    );
         }
 
         return toResponse(payment);
@@ -296,6 +340,7 @@ public class SubscriptionPaymentService {
         return new PaymentResponse(
                 payment.getId(),
                 subscription.getClinic().getId(),
+                subscription.getClinic().getName(),
                 subscription.getId(),
                 plan.getId(),
                 plan.getName(),

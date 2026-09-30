@@ -8,12 +8,14 @@ import com.jfl.appointment.dashboard.dto.NotificationDueDto;
 import com.jfl.appointment.dashboard.service.NotificationDispatchService;
 import com.jfl.appointment.dashboard.service.NotificationService;
 import com.jfl.appointment.entity.NotificationChannel;
+import com.jfl.appointment.service.EmailService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -23,6 +25,7 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final NotificationDispatchService dispatchService;
+    private final EmailService emailService;
 
     @PreAuthorize("""
             hasAnyRole(
@@ -66,5 +69,14 @@ public class NotificationController {
     @PostMapping("/notifications/{notificationId}/mark-failed")
     public void markFailed(@PathVariable Long notificationId, @Valid @RequestBody MarkFailedRequest request) {
         dispatchService.markFailed(notificationId, request.errorMessage());
+    }
+
+    @PostMapping("/brevo-test-email")
+    public ResponseEntity<String> sendTestEmail() {
+
+        emailService.sendSubscriptionActivatedEmail("chetan.dahule03@gmail.com",
+                "Chetan","MultiSpeciality Clinic","Chetan", LocalDate.now(),LocalDate.now().plusDays(30));
+
+        return ResponseEntity.ok("Email sent successfully");
     }
 }
