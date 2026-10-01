@@ -271,6 +271,7 @@ public class EmailService {
     public void sendSubscriptionPaymentSubmittedEmail(
             String toEmail,
             String adminName,
+            String submittedBy,
             String clinicName,
             String planName,
             String transactionId,
@@ -361,7 +362,7 @@ public class EmailService {
             """.formatted(
                 adminName,
                 clinicName,
-                adminName,
+                submittedBy,
                 planName,
                 transactionId,
                 amount

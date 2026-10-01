@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -45,6 +46,11 @@ public class Appointment extends AuditableEntity {
 
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
+
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    private AppointmentPaymentStatus paymentStatus;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

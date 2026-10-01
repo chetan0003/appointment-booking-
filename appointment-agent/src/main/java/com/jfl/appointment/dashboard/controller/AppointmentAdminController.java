@@ -2,9 +2,7 @@ package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
-import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
 import com.jfl.appointment.entity.*;
-import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.AppointmentRepository;
 import com.jfl.appointment.repository.NotificationRepository;
@@ -23,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 
 @Slf4j
@@ -253,6 +250,8 @@ public class AppointmentAdminController {
                 savedAppointment.getAppointmentDate(),
                 savedAppointment.getStartTime(),
                 savedAppointment.getEndTime(),
+                savedAppointment.getAmount(),
+                savedAppointment.getPaymentStatus(),
                 savedAppointment.getStatus(),
                 savedAppointment.getSource() != null ? savedAppointment.getSource().name() : null,
                 savedAppointment.getDoctor().getId(),

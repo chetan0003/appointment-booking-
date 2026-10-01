@@ -81,6 +81,35 @@ public class ClinicController {
                 );
     }
 
+
+    @PreAuthorize("""
+        hasAnyRole(
+            'SUPER_ADMIN'
+        )
+    """)
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<ClinicResponse>> updateClinic(
+            @PathVariable Long id,
+            @RequestBody CreateClinicRequest request) {
+
+        log.info("Creating clinic");
+        // --------------------------------------------------
+        // Check duplicate clinic
+        // --------------------------------------------------
+
+        ClinicResponse response =
+                clinicService.updateClinic(id,request);
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(
+                        ApiResponse.success(
+                                "Clinic created successfully.",
+                                response
+                        )
+                );
+    }
+
     @PreAuthorize("""
         hasAnyRole(
             'SUPER_ADMIN',

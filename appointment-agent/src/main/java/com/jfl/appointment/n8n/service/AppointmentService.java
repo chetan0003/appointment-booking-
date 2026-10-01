@@ -16,10 +16,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @Slf4j
@@ -35,6 +35,7 @@ public class AppointmentService {
     private final ConversationSessionService sessionService;
     private final NotificationSchedulingService notificationSchedulingService;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final AppointmentPaymentRepository appointmentPaymentRepository;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -56,10 +57,6 @@ public class AppointmentService {
         log.info("createAppointment: {},{},{}",request.clinicId(), request.patientName(),request.appointmentDate());
 
         //VALIDATE SUBSCRIPTION PLAN
-//        subscriptionFeatureService.validateFeature(
-//                request.clinicId(),
-//                SubscriptionFeature.APPOINTMENTS
-//        );
         subscriptionFeatureService.validateFeatureOnWhats(
                 request.clinicId()
         );
@@ -137,6 +134,19 @@ public class AppointmentService {
         if (request.sessionId() != null) {
             sessionService.markBooked(request.sessionId());
         }
+        // =====================================================
+        // 10. Create Appointment Payment
+        // =====================================================
+
+        AppointmentPayment payment = new AppointmentPayment();
+
+        payment.setAppointment(appointment);
+        payment.setTotalAmount(service.getPrice());
+        payment.setPaidAmount(BigDecimal.ZERO);
+        payment.setStatus(AppointmentPaymentStatus.UNPAID);
+        appointmentPaymentRepository.save(payment);
+
+        //notification
         notificationSchedulingService.scheduleBookingReminder(saved);
         return toResponse(saved);
     }

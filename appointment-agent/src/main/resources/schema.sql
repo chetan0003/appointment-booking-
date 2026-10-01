@@ -586,3 +586,82 @@ CREATE UNIQUE INDEX uq_notification_appointment_type_channel
         ON patient_qr_credential(patient_id);
 
 
+--SUBSCRIPTION PLAN INSERT QUERY
+
+INSERT INTO subscription_plan (
+    code,
+    name,
+    description,
+    monthly_price,
+    yearly_price,
+    max_doctors,
+    max_staff,
+    max_appointments_per_month,
+    max_patients,
+    ai_receptionist_enabled,
+    whatsapp_enabled,
+    analytics_enabled,
+    active
+)
+VALUES
+(
+    'TRIAL',
+    'Trial',
+    'Free trial plan',
+    0.00,
+    0.00,
+    2,
+    2,
+    100,
+    200,
+    TRUE,
+    TRUE,
+    FALSE,
+    TRUE
+),
+(
+    'BASIC',
+    'Basic',
+    'Basic clinic management plan',
+    999.00,
+    9999.00,
+    3,
+    5,
+    500,
+    1000,
+    FALSE,
+    TRUE,
+    FALSE,
+    TRUE
+),
+(
+    'PROFESSIONAL',
+    'Professional',
+    'Professional clinic management plan',
+    1999.00,
+    19999.00,
+    10,
+    20,
+    2000,
+    5000,
+    TRUE,
+    TRUE,
+    TRUE,
+    TRUE
+),
+(
+    'ENTERPRISE',
+    'Enterprise',
+    'Enterprise clinic management plan',
+    4999.00,
+    49999.00,
+    50,
+    100,
+    10000,
+    25000,
+    TRUE,
+    TRUE,
+    TRUE,
+    TRUE
+);
+

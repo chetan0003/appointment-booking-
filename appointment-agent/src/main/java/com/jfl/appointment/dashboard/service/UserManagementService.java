@@ -179,7 +179,19 @@ public class UserManagementService {
     private List<ClinicResponse> setClinicResponse(List<Clinic> clinicList) {
         return clinicList.stream()
                 .map(o -> {
-                    return new ClinicResponse(o.getId(), o.getName(), o.getWhatsappNumber(), o.getTimezone(), o.isActive(), o.getCreatedAt());
+                    return new ClinicResponse(o.getId(),
+                            o.getName(),
+                            o.getWhatsappNumber(),
+                            o.getTimezone(), o.isActive(),
+                            o.getCountryCode(),
+                            o.getState(),
+                            o.getCity(),
+                            o.getPostalCode(),
+                            o.getAddressLine1(),
+                            o.getAddressLine2(),
+                            o.getLatitude(),
+                            o.getLongitude(),
+                            o.getCreatedAt());
                 }).toList();
     }
 }

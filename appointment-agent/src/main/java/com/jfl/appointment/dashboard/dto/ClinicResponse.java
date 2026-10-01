@@ -8,6 +8,14 @@ public record ClinicResponse(
         String whatsappNumber,
         String timezone,
         boolean active,
+        String countryCode,
+        String state,
+        String city,
+        String postalCode,
+        String addressLine1,
+        String addressLine2,
+        Double latitude,
+        Double longitude,
         LocalDateTime createdAt
 ) {
 }

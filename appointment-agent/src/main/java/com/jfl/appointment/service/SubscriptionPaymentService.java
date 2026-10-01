@@ -6,6 +6,7 @@ import com.jfl.appointment.dto.PaymentResponse;
 import com.jfl.appointment.dto.SubmitPaymentRequest;
 import com.jfl.appointment.dto.VerifyPaymentRequest;
 import com.jfl.appointment.entity.*;
+import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.*;
 
@@ -75,7 +76,7 @@ public class SubscriptionPaymentService {
         if (paymentRepository
                 .existsByTransactionId(transactionId)) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Transaction ID has already been submitted."
             );
         }
@@ -120,7 +121,7 @@ public class SubscriptionPaymentService {
                 paymentRepository
                         .existsBySubscriptionIdAndStatus(
                                 subscription.getId(),
-                                PaymentStatus.PENDING
+                                SubscriptionPaymentStatus.PENDING
                         );
 
         if (pendingPaymentExists) {
@@ -150,7 +151,7 @@ public class SubscriptionPaymentService {
         payment.setCurrency("INR");
 
         payment.setStatus(
-                PaymentStatus.PENDING
+                SubscriptionPaymentStatus.PENDING
         );
 
         payment.setPaymentDate(
@@ -162,9 +163,13 @@ public class SubscriptionPaymentService {
 
         //send email to admin
         Optional<AppUser> superadmin = appUserRepository.findByUsername("superadmin");
+        Long createdBy = payment.getCreatedBy();
+        Optional<AppUser> byId = appUserRepository.findById(createdBy);
         AppUser appUser = superadmin.get();
-        emailService.sendSubscriptionPaymentSubmittedEmail(appUser.getEmail(),
+        emailService.sendSubscriptionPaymentSubmittedEmail(
+                appUser.getEmail(),
                 appUser.getFirstName(),
+                byId.get().getFirstName(),
                 clinic.getName(),
                 plan.getName(),
                 request.transactionId(),
@@ -189,7 +194,7 @@ public class SubscriptionPaymentService {
                                 ));
 
         if (payment.getStatus()
-                != PaymentStatus.PENDING) {
+                != SubscriptionPaymentStatus.PENDING) {
 
             throw new IllegalStateException(
                     "Payment has already been processed."
@@ -207,7 +212,7 @@ public class SubscriptionPaymentService {
              * PAYMENT VERIFIED
              */
             payment.setStatus(
-                    PaymentStatus.VERIFIED
+                    SubscriptionPaymentStatus.VERIFIED
             );
 
             payment.setVerifiedAt(
@@ -242,7 +247,7 @@ public class SubscriptionPaymentService {
              * PAYMENT REJECTED
              */
             payment.setStatus(
-                    PaymentStatus.REJECTED
+                    SubscriptionPaymentStatus.REJECTED
             );
 
             payment.setVerifiedAt(
@@ -286,7 +291,7 @@ public class SubscriptionPaymentService {
 
         return paymentRepository
                 .findByStatusOrderByCreatedAtDesc(
-                        PaymentStatus.PENDING
+                        SubscriptionPaymentStatus.PENDING
                 )
                 .stream()
                 .map(this::toResponse)

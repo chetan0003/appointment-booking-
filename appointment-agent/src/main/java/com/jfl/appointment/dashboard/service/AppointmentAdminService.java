@@ -9,7 +9,6 @@ import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
 import com.jfl.appointment.security.SecurityContextService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
-import com.jfl.appointment.service.SubscriptionLimitService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -19,6 +18,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -48,6 +48,8 @@ public class AppointmentAdminService {
     private final NotificationSchedulingService notificationSchedulingService;
     private final NotificationRepository notificationRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final AppointmentPaymentRepository appointmentPaymentRepository;
+
     @Transactional
     public AppointmentListItemDto createAppointment(
             Long clinicId,
@@ -219,7 +221,7 @@ public class AppointmentAdminService {
 
         Appointment appointment =
                 new Appointment();
-
+        appointment.setAmount(service.getPrice());
         appointment.setClinic(clinic);
         appointment.setPatient(patient);
         appointment.setDoctor(doctor);
@@ -243,7 +245,7 @@ public class AppointmentAdminService {
         appointment.setSource(PatientSource.DASHBOARD);
         // Normal appointment
         appointment.setFollowUpOfAppointment(null);
-
+        appointment.setPaymentStatus(AppointmentPaymentStatus.UNPAID);
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
@@ -253,7 +255,19 @@ public class AppointmentAdminService {
         );
 
         // =====================================================
-        // 10. Create booking notification
+        // 10. Create Appointment Payment
+        // =====================================================
+
+        AppointmentPayment payment = new AppointmentPayment();
+
+        payment.setAppointment(appointment);
+        payment.setTotalAmount(service.getPrice());
+        payment.setPaidAmount(BigDecimal.ZERO);
+        payment.setStatus(AppointmentPaymentStatus.UNPAID);
+        appointmentPaymentRepository.save(payment);
+
+        // =====================================================
+        // 11. Create booking notification
         // =====================================================
 
 //         notificationService.createBookingConfirmation(
@@ -411,7 +425,7 @@ public class AppointmentAdminService {
 
         Appointment nextAppointment =
                 new Appointment();
-
+        nextAppointment.setAmount(service.getPrice());
         nextAppointment.setClinic(clinic);
         nextAppointment.setPatient(patient);
         nextAppointment.setDoctor(doctor);
@@ -443,7 +457,7 @@ public class AppointmentAdminService {
         // =====================================================
         // 10. Save
         // =====================================================
-
+        nextAppointment.setPaymentStatus(AppointmentPaymentStatus.UNPAID);
         Appointment savedAppointment =
                 appointmentRepository.save(
                         nextAppointment
@@ -454,6 +468,18 @@ public class AppointmentAdminService {
                 previousAppointmentId,
                 savedAppointment.getId()
         );
+
+        // =====================================================
+        // 10. Create Appointment Payment
+        // =====================================================
+
+        AppointmentPayment payment = new AppointmentPayment();
+
+        payment.setAppointment(nextAppointment);
+        payment.setTotalAmount(service.getPrice());
+        payment.setPaidAmount(BigDecimal.ZERO);
+        payment.setStatus(AppointmentPaymentStatus.UNPAID);
+        appointmentPaymentRepository.save(payment);
 
         // =====================================================
         // 11. Booking notification
@@ -653,6 +679,8 @@ public class AppointmentAdminService {
                 a.getAppointmentDate(),
                 a.getStartTime(),
                 a.getEndTime(),
+                a.getAmount(),
+                a.getPaymentStatus(),
                 a.getStatus(),
                 a.getSource() != null ? a.getSource().name() : null,
                 a.getDoctor().getId(),

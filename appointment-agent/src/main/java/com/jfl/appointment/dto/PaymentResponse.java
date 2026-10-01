@@ -1,7 +1,7 @@
 package com.jfl.appointment.dto;
 
 
-import com.jfl.appointment.entity.PaymentStatus;
+import com.jfl.appointment.entity.SubscriptionPaymentStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -26,7 +26,7 @@ public record PaymentResponse(
 
         String currency,
 
-        PaymentStatus status,
+        SubscriptionPaymentStatus status,
 
         LocalDateTime paymentDate,
 
