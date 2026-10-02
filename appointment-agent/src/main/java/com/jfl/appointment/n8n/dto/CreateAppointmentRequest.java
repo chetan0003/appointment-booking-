@@ -11,6 +11,9 @@ public record CreateAppointmentRequest(
         @NotNull Long doctorId,
         @NotNull Long serviceId,
         @NotBlank String patientName,
+
+        @NotBlank String qrType,
+        Long patientId,
         @NotBlank String whatsappNumber,
         @NotNull LocalDate appointmentDate,
         @NotNull LocalTime startTime,

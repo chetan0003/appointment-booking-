@@ -1,0 +1,2457 @@
+{
+  "name": "AI Appointment Booking - Twilio Multi-Tenant v23 (create session with patientId)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twilio-whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "12075c76-38ec-429e-a374-c380f6b30f6f",
+      "name": "Twilio Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        -1472,
+        560
+      ],
+      "webhookId": "a258e897-f594-4a53-9c94-43fd7ec45578"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || $json;\nconst messageText = String(body.Body || '').trim();\nconst fromNumber = String(body.From || '').replace('whatsapp:', '').trim();\n\nconst normalizedText = decodeURIComponent(messageText);\nconst qrMatch = normalizedText.match(/HOLA_MD[:](\\d+)[:]([A-Za-z0-9_-]+)/i);\n\nconst clinicId = qrMatch ? Number(qrMatch[1]) : null;\nconst patientToken = qrMatch ? qrMatch[2] : null;\n\nreturn [{\n  json: {\n    clinicId,\n    patientToken,\n    whatsappNumber: fromNumber,\n    messageText,\n    waMessageId: body.MessageSid || `MSG_${Date.now()}`,\n    contactName: body.ProfileName || 'Patient'\n  }\n}];"
+      },
+      "id": "e4b398b8-ef0f-49e0-ab26-6ab1f7f70b21",
+      "name": "Parse Twilio Payload & QR Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hasToken",
+              "leftValue": "={{ $('Parse Twilio Payload & QR Code').first()?.json?.patientToken }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6047e3bf-ad5f-44fb-9e4f-e6c9b410989a",
+      "name": "Has Token QR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1024,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://backend:8080/api/n8n/patients/identify-by-token",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clinicId: $('Parse Twilio Payload & QR Code').first()?.json?.clinicId, token: $('Parse Twilio Payload & QR Code').first()?.json?.patientToken } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "4160314a-a792-4b66-92a9-f56283c97b79",
+      "name": "Identify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://backend:8080/api/n8n/clinics/sessions/active",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "whatsappNumber",
+              "value": "={{$('Parse Twilio Payload & QR Code').first()?.json?.whatsappNumber}}"
+            },
+            {
+              "name": "clinicId",
+              "value": "={{$('Parse Twilio Payload & QR Code').first()?.json?.clinicId || null}}"
+            },
+            {
+              "name": "patientToken",
+              "value": "={{$('Parse Twilio Payload & QR Code').first()?.json?.patientToken || null}}"
+            },
+            {
+              "name": "patientId",
+              "value": "={{ null }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "1d1f8712-2351-4c6c-abf9-bdb543eba441",
+      "name": "Get Active Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "wait",
+              "leftValue": "={{$('Session With Patient').first().json.state}}",
+              "rightValue": "WAITING_FOR_SLOT",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f9ed9624-bee8-4cda-8d45-c6fdeafc29e3",
+      "name": "Waiting For Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        544,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Session With Patient').first().json.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Session With Patient').first().json.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Session With Patient').first().json.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c5086564-b737-47a7-8250-89712a509612",
+      "name": "Get Availability For Slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        768,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Twilio Payload & QR Code').first()?.json || {};\nconst session = $('Session With Patient').first()?.json || {};\nconst availability = $json || {};\nconst slots = Array.isArray(availability.slots) ? availability.slots : [];\nconst message = String(input.messageText || '').trim();\n\nfunction normalizeTime(value) {\n  if (value === null || value === undefined) return null;\n  const s = String(value).trim().toUpperCase().replace(/\\s+/g, ' ');\n  let m = s.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h < 0 || h > 23 || min > 59) return null;\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n  m = s.match(/^(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM)$/);\n  if (m) {\n    let h = Number(m[1]);\n    const min = Number(m[2] || 0);\n    const period = m[3];\n    if (h < 1 || h > 12 || min > 59) return null;\n    if (period === 'AM' && h === 12) h = 0;\n    if (period === 'PM' && h !== 12) h += 12;\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n  m = s.match(/^(\\d{1,2}):(\\d{2})\\s*(AM|PM)$/);\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h >= 0 && h <= 23 && min <= 59) {\n      return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n    }\n  }\n  return null;\n}\n\nfunction displayTime(hhmm) {\n  const parts = String(hhmm).slice(0, 5).split(':').map(Number);\n  const hRaw = parts[0];\n  const mRaw = parts[1] || 0;\n  const suffix = hRaw >= 12 ? 'PM' : 'AM';\n  const hour = hRaw % 12 || 12;\n  return `${hour}:${String(mRaw).padStart(2, '0')} ${suffix}`;\n}\n\nconst uniqueSlots = [...new Set(slots.map(normalizeTime).filter(Boolean))];\nconst patientId = session.patientId || null;\nconst patientName = session.patientName || input.contactName || null;\n\nif (uniqueSlots.length === 0) {\n  return [{\n    json: {\n      kind: 'NO_SLOTS',\n      selectedStartTime: null,\n      shouldBook: false,\n      patientId,\n      patientName,\n      reply_to_patient: `Sorry, there are no available slots on ${session.appointmentDate || 'the requested date'}. Would you like to choose another date?`,\n      session_updates: {\n        sessionId: session.sessionId,\n        clinicId: session.clinicId,\n        whatsappNumber: session.whatsappNumber,\n        intent: session.intent ?? 'BOOK_APPOINTMENT',\n        serviceId: session.serviceId ?? null,\n        doctorId: session.doctorId ?? null,\n        appointmentDate: session.appointmentDate ?? null,\n        selectedStartTime: null,\n        patientId,\n        patientName,\n        state: 'COLLECTING_DATE'\n      }\n    }\n  }];\n}\n\nlet selectedStartTime = null;\nif (/^\\d+$/.test(message)) {\n  const n = Number(message);\n  if (n >= 1 && n <= uniqueSlots.length) selectedStartTime = uniqueSlots[n - 1];\n}\nif (!selectedStartTime) {\n  const normalizedMessage = normalizeTime(message);\n  if (normalizedMessage && uniqueSlots.includes(normalizedMessage)) selectedStartTime = normalizedMessage;\n}\n\nif (!selectedStartTime) {\n  return [{\n    json: {\n      kind: 'INVALID_SLOT',\n      selectedStartTime: null,\n      shouldBook: false,\n      patientId,\n      patientName,\n      reply_to_patient: `Please choose one of the available slots:\\n\\n` + uniqueSlots.map((slot, i) => `${i + 1}. ${displayTime(slot)}`).join('\\n'),\n      session_updates: {\n        sessionId: session.sessionId,\n        clinicId: session.clinicId,\n        whatsappNumber: session.whatsappNumber,\n        intent: session.intent ?? 'BOOK_APPOINTMENT',\n        serviceId: session.serviceId ?? null,\n        doctorId: session.doctorId ?? null,\n        appointmentDate: session.appointmentDate ?? null,\n        selectedStartTime: null,\n        patientId,\n        patientName,\n        state: 'WAITING_FOR_SLOT'\n      },\n      availableSlots: uniqueSlots\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    kind: 'BOOK',\n    selectedStartTime,\n    patientId,\n    patientName,\n    shouldBook: true,\n    reply_to_patient: `Great. I have selected ${displayTime(selectedStartTime)}. Proceeding with booking.`,\n    session_updates: {\n      sessionId: session.sessionId,\n      clinicId: session.clinicId,\n      whatsappNumber: session.whatsappNumber,\n      intent: session.intent ?? 'BOOK_APPOINTMENT',\n      serviceId: session.serviceId ?? null,\n      doctorId: session.doctorId ?? null,\n      appointmentDate: session.appointmentDate ?? null,\n      selectedStartTime,\n      patientId,\n      patientName,\n      state: 'READY_TO_BOOK'\n    }\n  }\n}];\n"
+      },
+      "id": "494ca674-8e5f-40af-85eb-6ce86d4e921e",
+      "name": "Handle Slot Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "book",
+              "leftValue": "={{$('Handle Slot Selection').first().json.shouldBook}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "3d3b6463-0c70-46c4-a39a-1c1d903b92ed",
+      "name": "Has Name After Slot?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1664,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clinicId: $('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId, doctorId: $('Session With Patient').first()?.json?.doctorId, serviceId: $('Session With Patient').first()?.json?.serviceId, patientId: $('Handle Slot Selection').first()?.json?.patientId || $('Session With Patient').first()?.json?.patientId || null, patientName: $('Handle Slot Selection').first()?.json?.patientName || $('Session With Patient').first()?.json?.patientName || null, whatsappNumber: $('Parse Twilio Payload & QR Code').first()?.json?.whatsappNumber, appointmentDate: $('Session With Patient').first()?.json?.appointmentDate, startTime: ($('Handle Slot Selection').first()?.json?.selectedStartTime || '').split(':').slice(0,2).join(':') + ':00', idempotencyKey: $('Parse Twilio Payload & QR Code').first()?.json?.waMessageId, sessionId: $('Session With Patient').first()?.json?.sessionId } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "25760f19-f9a3-4346-90f6-9582a68318f9",
+      "name": "Create Appointment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst r = $json || {};\n\nconst statusCode = Number(\n  r.statusCode ??\n  r.status ??\n  0\n);\n\nconst body =\n  r.body && typeof r.body === 'object'\n    ? r.body\n    : r;\n\nconst success =\n  (statusCode >= 200 && statusCode < 300) ||\n  body?.appointmentId != null ||\n  body?.id != null ||\n  [\"CONFIRMED\", \"BOOKED\", \"SUCCESS\", \"CREATED\"]\n    .includes(String(body?.status || body?.appointmentStatus || '').toUpperCase());\n\nconst conflict =\n  statusCode === 409 ||\n  String(body?.code || body?.errorCode || '').toUpperCase() === 'SLOT_UNAVAILABLE';\n\nconst appointmentId = body?.appointmentId ?? body?.id ?? null;\nconst s = $('Session With Patient').first().json;\nconst time = $('Handle Slot Selection').first().json.selectedStartTime;\n\nreturn [{\n  json: {\n    success,\n    conflict,\n    statusCode,\n    appointmentId,\n    time,\n    date: s.appointmentDate,\n    reply_to_patient:\n      success\n        ? `Your appointment has been booked successfully for ${s.appointmentDate} at ${time}.${appointmentId ? ` Appointment ID: ${appointmentId}.` : ''}`\n        : conflict\n          ? `Sorry, the ${time} slot was just booked by another patient. Let me check the remaining slots.`\n          : `Sorry, I could not book the appointment for ${s.appointmentDate} at ${time}. Please try again.`\n  }\n}];\n"
+      },
+      "id": "acc1329f-2149-45ca-b64e-6727a7780633",
+      "name": "Process Booking Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent, serviceId: $('Session With Patient').first()?.json?.serviceId, doctorId: $('Session With Patient').first()?.json?.doctorId, appointmentDate: $('Session With Patient').first()?.json?.appointmentDate, selectedStartTime: $('Handle Slot Selection').first()?.json?.selectedStartTime, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: $('Process Booking Response').first()?.json?.success ? 'BOOKED' : 'WAITING_FOR_SLOT' } }}",
+        "options": {}
+      },
+      "id": "f1e16206-b52b-4c80-bbb4-0ae1f4fc7d28",
+      "name": "Update Booked Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Process Booking Response').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "b40a6858-0568-4b7c-aec0-7d4058370510",
+      "name": "Respond Booking",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2784,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent, serviceId: $('Session With Patient').first()?.json?.serviceId, doctorId: $('Session With Patient').first()?.json?.doctorId, appointmentDate: $('Session With Patient').first()?.json?.appointmentDate, selectedStartTime: $('Handle Slot Selection').first()?.json?.selectedStartTime || null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: $('Handle Slot Selection').first()?.json?.kind === 'COLLECT_NAME' ? 'COLLECTING_NAME' : $('Handle Slot Selection').first()?.json?.session_updates?.state } }}",
+        "options": {}
+      },
+      "id": "f6ccdbe2-954b-4e32-8575-cdfee3303866",
+      "name": "Update Selected Slot State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "valid",
+              "leftValue": "={{$('Handle Slot Selection').first().json.selectedStartTime}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "440892d7-6a69-4434-98ae-ad8b050ad600",
+      "name": "Slot Selected Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Handle Slot Selection').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "5502a604-2f42-47bf-88c7-33a849835f29",
+      "name": "Respond Slot Prompt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2112,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "name",
+              "leftValue": "={{$('Session With Patient').first().json.state}}",
+              "rightValue": "COLLECTING_NAME",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "663273b0-3944-48cd-9f6d-82c7c27d4fc2",
+      "name": "Collecting Name?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        768,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input=$('Parse Twilio Payload & QR Code').first()?.json || {}; const s=$('Session With Patient').first()?.json || {};\nconst name=String(input.messageText||'').trim();\nreturn [{json:{patientName:name,session:s}}];"
+      },
+      "id": "b11268cb-575a-4f1f-bdf3-06267d8fc4f5",
+      "name": "Set Patient Name",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/appointments",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { clinicId: $('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId, doctorId: $('Session With Patient').first()?.json?.doctorId, serviceId: $('Session With Patient').first()?.json?.serviceId, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Set Patient Name').first()?.json?.patientName, whatsappNumber: $('Parse Twilio Payload & QR Code').first()?.json?.whatsappNumber, appointmentDate: $('Session With Patient').first()?.json?.appointmentDate, startTime: ($('Session With Patient').first()?.json?.selectedStartTime || '').split(':').slice(0,2).join(':') + ':00', idempotencyKey: $('Parse Twilio Payload & QR Code').first()?.json?.waMessageId, sessionId: $('Session With Patient').first()?.json?.sessionId } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "bedcbebf-c891-4673-9b63-1346d987dbff",
+      "name": "Create Appointment From Name",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst r = $json || {};\n\nconst statusCode = Number(\n  r.statusCode ??\n  r.status ??\n  0\n);\n\nconst body =\n  r.body && typeof r.body === 'object'\n    ? r.body\n    : r;\n\nconst success =\n  (statusCode >= 200 && statusCode < 300) ||\n  body?.appointmentId != null ||\n  body?.id != null ||\n  [\"CONFIRMED\", \"BOOKED\", \"SUCCESS\", \"CREATED\"]\n    .includes(String(body?.status || body?.appointmentStatus || '').toUpperCase());\n\nconst conflict =\n  statusCode === 409 ||\n  String(body?.code || body?.errorCode || '').toUpperCase() === 'SLOT_UNAVAILABLE';\n\nconst appointmentId = body?.appointmentId ?? body?.id ?? null;\nconst s = $('Session With Patient').first().json;\nconst name = $('Set Patient Name').first().json.patientName;\n\nreturn [{\n  json: {\n    success,\n    conflict,\n    statusCode,\n    appointmentId,\n    name,\n    reply_to_patient:\n      success\n        ? `Your appointment has been booked successfully for ${s.appointmentDate} at ${s.selectedStartTime}.${appointmentId ? ` Appointment ID: ${appointmentId}.` : ''}`\n        : conflict\n          ? `Sorry, the ${s.selectedStartTime} slot was just booked by another patient. Let me check the remaining slots.`\n          : `Sorry, I could not complete the booking. Please try another slot.`\n  }\n}];\n"
+      },
+      "id": "55f6a045-e47c-49f6-8938-72d597aece93",
+      "name": "Process Name Booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first().json.intent, serviceId: $('Session With Patient').first().json.serviceId, doctorId: $('Session With Patient').first().json.doctorId, appointmentDate: $('Session With Patient').first().json.appointmentDate, selectedStartTime: $('Session With Patient').first().json.selectedStartTime, patientName: $('Set Patient Name').first().json.patientName, state: $('Process Name Booking').first().json.success ? 'BOOKED' : 'WAITING_FOR_SLOT' } }}",
+        "options": {}
+      },
+      "id": "b8b3e962-a851-4a96-b559-e713439861ed",
+      "name": "Update Name Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Process Name Booking').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "7c0b746f-7c57-4a21-9e83-012e5b1c8ffe",
+      "name": "Respond Name Booking",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2784,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Twilio Payload & QR Code').first()?.json || {};\nconst session = $('Session With Patient').first()?.json || {};\nlet doctors = [];\ntry {\n  // Prefer doctors already fetched for clinic (no service filter)\n  doctors = $('Fetch Clinic Doctors').all().map(i => ({ id: i.json.id, name: i.json.name, serviceId: i.json.serviceId || i.json.defaultServiceId || null }));\n} catch (e) {\n  try {\n    doctors = $('Get Doctors For Service').all().map(i => ({ id: i.json.id, name: i.json.name, serviceId: i.json.serviceId || null }));\n  } catch (e2) {}\n}\nconst prompt = `Extract the patient's appointment selection. Return ONLY JSON.\nAllowed types: DOCTOR, DATE, UNKNOWN.\nRules:\n- Match DOCTOR only to the supplied doctors list (by name).\n- Convert dates to YYYY-MM-DD (use currentDateTime Asia/Kolkata for relative dates like tomorrow).\n- Do not invent values. Do not ask for or return SERVICE.\nOutput exactly: {\"type\":\"DOCTOR|DATE|UNKNOWN\",\"value\":\"string or null\",\"doctorId\":\"string or null\"}`;\nconst user = JSON.stringify({\n  state: session.state,\n  patientMessage: input.messageText,\n  currentDateTime: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),\n  doctors\n}, null, 2);\nreturn [{ json: { systemPrompt: prompt, userPrompt: user } }];"
+      },
+      "id": "95caca22-53b0-41ab-a4ca-93300a3fb332",
+      "name": "Build AI Parser Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-goog-api-key",
+              "value": "={{$vars.GEMINI_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{\nJSON.stringify({\n  systemInstruction: {\n    parts: [\n      {\n        text: $json.systemPrompt\n      }\n    ]\n  },\n  contents: [\n    {\n      role: \"user\",\n      parts: [\n        {\n          text: $json.userPrompt\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    responseMimeType: \"application/json\",\n    maxOutputTokens: 4096,\n    temperature: 0.2\n  }\n})\n}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "9ec27008-4ac5-401a-a708-2784f0f2f33c",
+      "name": "Call Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        1040
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst text = r?.candidates?.[0]?.content?.parts?.[0]?.text || '';\nlet parsed;\ntry { parsed = JSON.parse(text); } catch (e) { parsed = { type: 'UNKNOWN', value: null, doctorId: null }; }\nreturn [{ json: parsed }];"
+      },
+      "id": "2cc9c720-8372-4b1a-9c62-1b53839192d8",
+      "name": "Parse AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $('Parse AI').first()?.json || {};\nconst s = $('Session With Patient').first()?.json || {};\nconst input = $('Parse Twilio Payload & QR Code').first()?.json || {};\nconst message = String(input.messageText || '').trim();\n\nlet doctors = [];\ntry {\n  doctors = $('Fetch Clinic Doctors').all().map(i => i.json);\n} catch (e) {\n  doctors = [];\n}\n\nconst type = String(ai.type || 'UNKNOWN').toUpperCase();\nconst value = String(ai.value || '').trim();\n\nlet serviceId = s.serviceId ?? null;\nlet doctorId = s.doctorId ?? null;\nlet date = s.appointmentDate ?? null;\nlet state = s.state;\nlet reply = '';\nlet action = 'NONE';\n\nfunction matchDoctor(val) {\n  if (val === null || val === undefined || val === '') return null;\n  const m = String(val).toLowerCase().replace(/^dr\\.?\\s+/, '').trim();\n  if (/^\\d+$/.test(m)) {\n    const n = Number(m);\n    if (n >= 1 && n <= doctors.length) return doctors[n - 1];\n  }\n  const byId = doctors.find(x => String(x.id) === String(val));\n  if (byId) return byId;\n  return doctors.find(x => String(x.name || '').toLowerCase().replace(/^dr\\.?\\s+/, '').trim() === m)\n    || doctors.find(x => String(x.name || '').toLowerCase().includes(m));\n}\n\nfunction applyDoctor(match) {\n  doctorId = match.id;\n  serviceId = match.serviceId || match.defaultServiceId || serviceId;\n  date = null;\n  state = 'COLLECTING_DATE';\n  reply = `Great! You've selected ${match.name}. What date would you like? (e.g., 2026-09-15)`;\n}\n\n/** Parse many common date formats to YYYY-MM-DD */\nfunction parseDate(text) {\n  if (!text) return null;\n  const t = String(text).trim();\n\n  // YYYY-MM-DD or YYYY/MM/DD\n  let m = t.match(/^(\\d{4})[-\\/.](\\d{1,2})[-\\/.](\\d{1,2})$/);\n  if (m) {\n    const y = m[1], mo = String(m[2]).padStart(2, '0'), d = String(m[3]).padStart(2, '0');\n    return `${y}-${mo}-${d}`;\n  }\n\n  // DD-MM-YYYY or DD/MM/YYYY or DD.MM.YYYY\n  m = t.match(/^(\\d{1,2})[-\\/.](\\d{1,2})[-\\/.](\\d{4})$/);\n  if (m) {\n    const d = String(m[1]).padStart(2, '0'), mo = String(m[2]).padStart(2, '0'), y = m[3];\n    return `${y}-${mo}-${d}`;\n  }\n\n  // DD-MM-YY\n  m = t.match(/^(\\d{1,2})[-\\/.](\\d{1,2})[-\\/.](\\d{2})$/);\n  if (m) {\n    const d = String(m[1]).padStart(2, '0'), mo = String(m[2]).padStart(2, '0');\n    let y = Number(m[3]);\n    y = y < 50 ? 2000 + y : 1900 + y;\n    return `${y}-${mo}-${d}`;\n  }\n\n  return null;\n}\n\nconst parsedFromMessage = parseDate(message);\nconst parsedFromAi = parseDate(value) || (type === 'DATE' && /^\\d{4}-\\d{2}-\\d{2}$/.test(value) ? value : null);\nconst resolvedDate = parsedFromMessage || parsedFromAi;\n\n// --- COLLECTING_DATE (or already have doctor): accept date and show slots ---\nif (s.state === 'COLLECTING_DATE' || (s.doctorId && resolvedDate)) {\n  if (resolvedDate) {\n    date = resolvedDate;\n    doctorId = doctorId || s.doctorId;\n    serviceId = serviceId || s.serviceId;\n    state = 'WAITING_FOR_SLOT';\n    action = 'CHECK_AVAILABILITY';\n    reply = `Thank you. Checking available slots for ${date}.`;\n  } else if (type === 'DOCTOR') {\n    const match = matchDoctor(ai.doctorId) || matchDoctor(value);\n    if (match) applyDoctor(match);\n    else {\n      state = 'COLLECTING_DATE';\n      reply = 'Please provide the appointment date, for example 2026-09-15.';\n    }\n  } else {\n    state = 'COLLECTING_DATE';\n    reply = 'Please provide the appointment date, for example 2026-09-15.';\n  }\n} else {\n  // STARTED / COLLECTING_DOCTOR / no doctor yet\n  const match = matchDoctor(ai.doctorId) || matchDoctor(value);\n  if (match) {\n    applyDoctor(match);\n  } else if (resolvedDate && doctors.length === 1) {\n    applyDoctor(doctors[0]);\n    date = resolvedDate;\n    state = 'WAITING_FOR_SLOT';\n    action = 'CHECK_AVAILABILITY';\n    reply = `Thank you. Checking available slots for ${date}.`;\n  } else if (resolvedDate && s.doctorId) {\n    date = resolvedDate;\n    state = 'WAITING_FOR_SLOT';\n    action = 'CHECK_AVAILABILITY';\n    reply = `Thank you. Checking available slots for ${date}.`;\n  } else {\n    state = 'COLLECTING_DOCTOR';\n    reply = doctors.length\n      ? `Please choose a doctor:\\n\\n${doctors.map((x, i) => `${i + 1}. ${x.name}`).join('\\n')}`\n      : `Sorry, no doctors are available right now. Please try again later.`;\n  }\n}\n\nreturn [{ json: { serviceId, doctorId, appointmentDate: date, state, action, reply_to_patient: reply } }];\n"
+      },
+      "id": "0da9f6fe-c9a8-43c2-a94d-dfea38273429",
+      "name": "Process AI Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Merge Service AI').first()?.json?.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Merge Service AI').first()?.json?.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Merge Service AI').first()?.json?.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6d99c752-d6d8-4d7c-ae5f-ec07fc87a757",
+      "name": "Get Availability",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3680,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $json || {};\nconst slots = Array.isArray(a.slots) ? a.slots : [];\nconst date = a.date || $('Process AI Selection').first()?.json?.appointmentDate;\nconst fmt = (v) => {\n  const [h, m] = String(v).split(':').map(Number);\n  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;\n};\nconst reply = slots.length\n  ? `Available slots for ${date}:\\n\\n${slots.map((s, i) => `${i + 1}. ${fmt(s)}`).join('\\n')}\\n\\nReply with the number or time of your preferred slot.`\n  : `Sorry, there are no available slots on ${date}. Would you like another date?`;\nreturn [{\n  json: {\n    slots,\n    date,\n    reply_to_patient: reply,\n    state: slots.length ? 'WAITING_FOR_SLOT' : 'COLLECTING_DATE'\n  }\n}];"
+      },
+      "id": "84206858-2de1-4bf9-95c6-0cf8f3efdaaa",
+      "name": "Format Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3904,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent, serviceId: $('Merge Service AI').first()?.json?.serviceId || $('Process AI Selection').first()?.json?.serviceId, doctorId: $('Merge Service AI').first()?.json?.doctorId || $('Process AI Selection').first()?.json?.doctorId, appointmentDate: $('Merge Service AI').first()?.json?.appointmentDate || $('Process AI Selection').first()?.json?.appointmentDate, selectedStartTime: null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: $('Format Availability').first()?.json?.state } }}",
+        "options": {}
+      },
+      "id": "8690be41-8bcb-4c2d-b847-81d8eedf334e",
+      "name": "Update Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4128,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Format Availability').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fa75bef0-9d92-4246-bc3c-6ec745ab2c31",
+      "name": "Respond With Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        4352,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Process AI Selection').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "611f2767-ce11-4b57-afbf-413710b330bc",
+      "name": "Respond AI Selection",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3232,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "show",
+              "leftValue": "={{$('Process AI Selection').first().json.action}}",
+              "rightValue": "CHECK_AVAILABILITY",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f0dc0718-087b-4158-9839-d025c26ffcf5",
+      "name": "AI Needs Availability?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3008,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent, serviceId: $('Process AI Selection').first()?.json?.serviceId, doctorId: $('Process AI Selection').first()?.json?.doctorId, appointmentDate: $('Process AI Selection').first()?.json?.appointmentDate, selectedStartTime: null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: $('Process AI Selection').first()?.json?.state } }}",
+        "options": {}
+      },
+      "id": "10ee56d1-a6ef-46b0-b104-fea2dde43f7c",
+      "name": "Update AI Session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2784,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8ee53172-38dd-4dad-a9d5-54c7ddde5bb3",
+              "leftValue": "={{$('Process Booking Response').first().json.conflict}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cd47828f-fd5d-4d31-80c6-ee1e55667bb0",
+      "name": "Booking Slot Conflict?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2336,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5d554799-db91-4c71-bf38-7995e76e3dd0",
+              "leftValue": "={{$('Process Name Booking').first().json.conflict}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "86509a3e-8502-4d32-a2c0-2db7070c57cc",
+      "name": "Name Booking Slot Conflict?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2336,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Session With Patient').first().json.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Session With Patient').first().json.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Session With Patient').first().json.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e081b50d-bb51-4e92-8a00-06079669a281",
+      "name": "Refresh Availability After Conflict",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst a = $json || {};\nconst slots = Array.isArray(a.slots) ? a.slots : [];\nconst session = $('Session With Patient').first().json || {};\nconst date = a.date || session.appointmentDate;\n\nfunction normalizeTime(value) {\n  const s = String(value ?? '').trim().toUpperCase();\n  let m = s.match(/^(\\d{1,2}):(\\d{2})(?::\\d{2})?$/);\n\n  if (m) {\n    const h = Number(m[1]);\n    const min = Number(m[2]);\n    if (h < 0 || h > 23 || min > 59) return null;\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  m = s.match(/^(\\d{1,2})(?::(\\d{2}))?\\s*(AM|PM)$/);\n\n  if (m) {\n    let h = Number(m[1]);\n    const min = Number(m[2] || 0);\n    const period = m[3];\n\n    if (h < 1 || h > 12 || min > 59) return null;\n\n    if (period === 'AM' && h === 12) h = 0;\n    if (period === 'PM' && h !== 12) h += 12;\n\n    return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;\n  }\n\n  return null;\n}\n\nfunction displayTime(hhmm) {\n  const [h, m] = hhmm.split(':').map(Number);\n  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;\n}\n\nconst uniqueSlots = [...new Set(slots.map(normalizeTime).filter(Boolean))];\n\nif (uniqueSlots.length === 0) {\n  return [{\n    json: {\n      conflictResult: \"NO_SLOTS\",\n      state: \"COLLECTING_DATE\",\n      selectedStartTime: null,\n      reply_to_patient:\n        `Sorry, the selected slot was just booked by another patient, and there are no other available slots on ${date}. ` +\n        `Please choose another date.`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    conflictResult: \"SLOTS_REMAIN\",\n    state: \"WAITING_FOR_SLOT\",\n    selectedStartTime: null,\n    availableSlots: uniqueSlots,\n    reply_to_patient:\n      `Sorry, the selected slot was just booked by another patient.\\n\\n` +\n      `Remaining available slots for ${date}:\\n\\n` +\n      uniqueSlots.map((slot, i) => `${i + 1}. ${displayTime(slot)}`).join('\\n') +\n      `\\n\\nPlease choose another slot.`\n  }\n}];\n"
+      },
+      "id": "582203cb-155d-4f3f-81a5-06e3bd1192db",
+      "name": "Format Conflict Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2784,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first().json.intent, serviceId: $('Session With Patient').first().json.serviceId, doctorId: $('Session With Patient').first().json.doctorId, appointmentDate: $('Session With Patient').first().json.appointmentDate, selectedStartTime: $('Format Conflict Availability').first().json.selectedStartTime, patientName: $('Session With Patient').first().json.patientName, state: $('Format Conflict Availability').first().json.state } }}",
+        "options": {}
+      },
+      "id": "f471ab46-bbd6-492b-b69f-690eccd7158e",
+      "name": "Update Session After Slot Conflict",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3008,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Format Conflict Availability').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ff6c4941-7873-4827-b272-fcf9cac77708",
+      "name": "Respond Slot Conflict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3232,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5e1e238e-f08a-4062-a48e-7872c84077da",
+              "leftValue": "={{$('Handle Slot Selection').first().json.kind}}",
+              "rightValue": "NO_SLOTS",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "06c866bd-bdd4-4352-a3a7-81f28275c444",
+      "name": "No Slots From Availability?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first().json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first().json.intent, serviceId: $('Session With Patient').first().json.serviceId, doctorId: $('Session With Patient').first().json.doctorId, appointmentDate: $('Session With Patient').first().json.appointmentDate, selectedStartTime: null, patientName: $('Session With Patient').first().json.patientName, state: 'COLLECTING_DATE' } }}",
+        "options": {}
+      },
+      "id": "5a165702-62e5-4dcc-b1d1-4b565b0e41cc",
+      "name": "Update Session No Slots",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Handle Slot Selection').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "cb96e59e-e92c-4d92-a937-3d9c9ba9fb19",
+      "name": "Respond No Slots",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1664,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/doctors",
+        "options": {}
+      },
+      "id": "655f3997-b3d2-4925-8929-ca30a2821887",
+      "name": "Fetch Clinic Doctors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        992,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "singleDoctor",
+              "leftValue": "={{ $('Fetch Clinic Doctors').all().length }}",
+              "rightValue": 1,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ee61b5bb-7724-443e-aff7-69956bba792c",
+      "name": "Single Doctor Clinic?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1664,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const docs = $('Fetch Clinic Doctors').all().map(i => i.json);\nconst autoDoctor = docs[0] || {};\nconst session = $('Session With Patient').first()?.json || {};\nconst patientName = session.patientName || $('Parse Twilio Payload & QR Code').first()?.json?.contactName || 'Patient';\nconst serviceId = autoDoctor.serviceId || autoDoctor.defaultServiceId || session.serviceId || null;\nreturn [{\n  json: {\n    doctorId: autoDoctor.id,\n    doctorName: autoDoctor.name,\n    serviceId,\n    state: 'COLLECTING_DATE',\n    reply_to_patient: `Hello ${patientName}! Welcome. You are booking with ${autoDoctor.name || 'our doctor'}. Please enter your preferred appointment date (e.g., 2026-09-15).`\n  }\n}];"
+      },
+      "id": "b9bd20c1-2ab3-4376-84f8-a7022c14892d",
+      "name": "Auto Select Single Doctor",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first()?.json?.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent || 'BOOK_APPOINTMENT', serviceId: $('Merge Service Auto').first()?.json?.serviceId, doctorId: $('Merge Service Auto').first()?.json?.doctorId, appointmentDate: null, selectedStartTime: null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: 'COLLECTING_DATE' } }}",
+        "options": {}
+      },
+      "id": "78b69326-c62a-4ba0-b6b7-d37b023ff979",
+      "name": "Update Session Auto Single Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Auto Select Single Doctor').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "001e3634-459b-4cfc-94d4-2abec37615ab",
+      "name": "Respond Single Doctor Prompt",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        2784,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "alreadydate",
+              "leftValue": "={{$('Session With Patient').first()?.json?.state}}",
+              "rightValue": "COLLECTING_DATE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5667f456-2eaa-4ddc-ba1b-3aa7b6cecc33",
+      "name": "Already Collecting Date?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1216,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('Parse Twilio Payload & QR Code').first()?.json || {};\nconst session = $('Session With Patient').first()?.json || {};\nconst message = String(input.messageText || '').trim();\n\nfunction parseDate(text) {\n  if (!text) return null;\n  const t = String(text).trim();\n  let m = t.match(/^(\\d{4})[-\\/.](\\d{1,2})[-\\/.](\\d{1,2})$/);\n  if (m) {\n    return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;\n  }\n  m = t.match(/^(\\d{1,2})[-\\/.](\\d{1,2})[-\\/.](\\d{4})$/);\n  if (m) {\n    return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;\n  }\n  m = t.match(/^(\\d{1,2})[-\\/.](\\d{1,2})[-\\/.](\\d{2})$/);\n  if (m) {\n    let y = Number(m[3]);\n    y = y < 50 ? 2000 + y : 1900 + y;\n    return `${y}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;\n  }\n  return null;\n}\n\nconst date = parseDate(message);\nconst isDate = !!date;\nreturn [{\n  json: {\n    isDate,\n    appointmentDate: date,\n    doctorId: session.doctorId || null,\n    serviceId: session.serviceId || null,\n    clinicId: session.clinicId || null,\n    sessionId: session.sessionId || null,\n    state: isDate ? 'WAITING_FOR_SLOT' : session.state,\n    action: isDate ? 'CHECK_AVAILABILITY' : 'NEED_AI'\n  }\n}];"
+      },
+      "id": "86a0278c-8f69-42d3-9c9a-7c349999aa16",
+      "name": "Try Parse Date Directly",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "isdate",
+              "leftValue": "={{$('Try Parse Date Directly').first()?.json?.isDate}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1dcfdc6f-c1ce-48ef-b6a9-6a9dee427046",
+      "name": "Is Plain Date?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1664,
+        1280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $('Try Parse Date Directly').first()?.json || {};\nconst s = $('Session With Patient').first()?.json || {};\nreturn [{\n  json: {\n    serviceId: d.serviceId || s.serviceId || null,\n    doctorId: d.doctorId || s.doctorId || null,\n    appointmentDate: d.appointmentDate,\n    state: 'WAITING_FOR_SLOT',\n    action: 'CHECK_AVAILABILITY',\n    reply_to_patient: `Thank you. Checking available slots for ${d.appointmentDate}.`\n  }\n}];"
+      },
+      "id": "a7911366-05ec-4005-aaaa-3cd5dbac8bf9",
+      "name": "Shape Direct Date Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first()?.json?.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent || 'BOOK_APPOINTMENT', serviceId: $('Merge Service Direct').first()?.json?.serviceId, doctorId: $('Merge Service Direct').first()?.json?.doctorId, appointmentDate: $('Merge Service Direct').first()?.json?.appointmentDate, selectedStartTime: null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: 'WAITING_FOR_SLOT' } }}",
+        "options": {}
+      },
+      "id": "f294c0f4-aad1-4711-955d-b2c33b700c9d",
+      "name": "Update Session After Date",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2560,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/availability",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "doctorId",
+              "value": "={{$('Merge Service Direct').first()?.json?.doctorId}}"
+            },
+            {
+              "name": "serviceId",
+              "value": "={{$('Merge Service Direct').first()?.json?.serviceId}}"
+            },
+            {
+              "name": "date",
+              "value": "={{$('Merge Service Direct').first()?.json?.appointmentDate}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "b3535897-6522-4611-8ac7-9d3b27e0c53b",
+      "name": "Get Availability Direct Date",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2784,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const a = $json || {};\nconst slots = Array.isArray(a.slots) ? a.slots : [];\nconst date = a.date || $('Merge Service Direct').first()?.json?.appointmentDate || $('Shape Direct Date Selection').first()?.json?.appointmentDate;\nconst fmt = (v) => {\n  const [h, m] = String(v).split(':').map(Number);\n  return `${h % 12 || 12}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;\n};\nconst reply = slots.length\n  ? `Available slots for ${date}:\\n\\n${slots.map((s, i) => `${i + 1}. ${fmt(s)}`).join('\\n')}\\n\\nReply with the number or time of your preferred slot.`\n  : `Sorry, there are no available slots on ${date}. Would you like another date?`;\nreturn [{\n  json: {\n    slots,\n    date,\n    reply_to_patient: reply,\n    state: slots.length ? 'WAITING_FOR_SLOT' : 'COLLECTING_DATE'\n  }\n}];"
+      },
+      "id": "df2cd8f9-c7e1-4729-b59a-381d0d070c61",
+      "name": "Format Availability Direct",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3008,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $('Session With Patient').first()?.json?.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { intent: $('Session With Patient').first()?.json?.intent || 'BOOK_APPOINTMENT', serviceId: $('Merge Service Direct').first()?.json?.serviceId, doctorId: $('Merge Service Direct').first()?.json?.doctorId, appointmentDate: $('Merge Service Direct').first()?.json?.appointmentDate, selectedStartTime: null, patientId: $('Session With Patient').first()?.json?.patientId || null, patientName: $('Session With Patient').first()?.json?.patientName || null, state: $('Format Availability Direct').first()?.json?.state } }}",
+        "options": {}
+      },
+      "id": "9430e6d1-4140-4acd-93ee-995da0c2e38a",
+      "name": "Update Session After Slots Direct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3232,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $('Format Availability Direct').first()?.json?.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "0363791c-d165-4326-9b5f-f0e584eef3f7",
+      "name": "Respond Slots Direct",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        3456,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/services/doctor/{{$('Shape Direct Date Selection').first()?.json?.doctorId || $('Session With Patient').first()?.json?.doctorId}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "39a175e4-8725-4c86-9ea1-777ecd7ee1cf",
+      "name": "Get Service For Doctor Direct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const shape = $('Shape Direct Date Selection').first()?.json || {};\nconst session = $('Session With Patient').first()?.json || {};\nconst svc = $json || {};\nconst serviceId = svc.id || svc.serviceId || shape.serviceId || session.serviceId || null;\nreturn [{\n  json: {\n    ...shape,\n    serviceId,\n    serviceName: svc.name || null,\n    doctorId: shape.doctorId || session.doctorId || null,\n    appointmentDate: shape.appointmentDate,\n    state: 'WAITING_FOR_SLOT',\n    action: 'CHECK_AVAILABILITY',\n    reply_to_patient: shape.reply_to_patient || `Thank you. Checking available slots for ${shape.appointmentDate}.`\n  }\n}];"
+      },
+      "id": "45c0c8be-6c8c-4ad5-a3df-2da72723a5cb",
+      "name": "Merge Service Direct",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        1328
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/services/doctor/{{$('Process AI Selection').first()?.json?.doctorId || $('Session With Patient').first()?.json?.doctorId}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a1cc4502-fba3-46f7-a806-81e510938123",
+      "name": "Get Service For Doctor AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3232,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const sel = $('Process AI Selection').first()?.json || {};\nconst session = $('Session With Patient').first()?.json || {};\nconst svc = $json || {};\nconst serviceId = svc.id || svc.serviceId || sel.serviceId || session.serviceId || null;\nreturn [{\n  json: {\n    ...sel,\n    serviceId,\n    serviceName: svc.name || null,\n    doctorId: sel.doctorId || session.doctorId || null,\n    appointmentDate: sel.appointmentDate,\n    state: sel.state || 'WAITING_FOR_SLOT',\n    action: sel.action || 'CHECK_AVAILABILITY',\n    reply_to_patient: sel.reply_to_patient\n  }\n}];"
+      },
+      "id": "fa4dae65-80cf-44db-be08-ae88fa39ced0",
+      "name": "Merge Service AI",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3456,
+        1136
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/{{$('Session With Patient').first()?.json?.clinicId || $('Parse Twilio Payload & QR Code').first()?.json?.clinicId}}/services/doctor/{{$('Auto Select Single Doctor').first()?.json?.doctorId}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "112944fa-dfec-4458-a180-dad456699b24",
+      "name": "Get Service For Doctor Auto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const auto = $('Auto Select Single Doctor').first()?.json || {};\nconst svc = $json || {};\nconst serviceId = svc.id || svc.serviceId || auto.serviceId || null;\nreturn [{\n  json: {\n    ...auto,\n    serviceId,\n    serviceName: svc.name || null\n  }\n}];"
+      },
+      "id": "d029847f-78ec-48ba-960b-0eec3fecd5bb",
+      "name": "Merge Service Auto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const identified = $json || {};\nconst parsed = $('Parse Twilio Payload & QR Code').first()?.json || {};\nconst patientId = identified.id ?? identified.patientId ?? identified.patient_id ?? null;\nconst patientName = identified.patientName || identified.name || identified.fullName || parsed.contactName || null;\nreturn [{\n  json: {\n    patientId: patientId != null ? Number(patientId) : null,\n    patientName,\n    clinicId: parsed.clinicId != null ? Number(parsed.clinicId) : null,\n    whatsappNumber: parsed.whatsappNumber,\n    patientToken: parsed.patientToken\n  }\n}];"
+      },
+      "id": "7df6eabc-9452-4672-843e-d6226c097db6",
+      "name": "Normalize Identified Patient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $json || {};\nlet patientId = session.patientId || null;\nlet patientName = session.patientName || null;\n\ntry {\n  const idn = $('Normalize Identified Patient').first();\n  if (idn && idn.json) {\n    patientId = patientId || idn.json.patientId || null;\n    patientName = patientName || idn.json.patientName || null;\n  }\n} catch (e) {}\n\nconst sessionId = session.sessionId || session.id || null;\nconst noSession = !sessionId || session.code === 'NOT_FOUND' ||\n  (typeof session.message === 'string' && session.message.toLowerCase().includes('no active session'));\n\nif (noSession) {\n  return [{\n    json: {\n      error: true,\n      noSession: true,\n      patientId,\n      patientName,\n      reply_to_patient: 'Please scan the clinic QR code to start booking an appointment.'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...session,\n    sessionId,\n    patientId,\n    patientName,\n    error: false,\n    noSession: false\n  }\n}];"
+      },
+      "id": "c931781a-f01a-4066-aa8f-4d7f38d7c733",
+      "name": "Attach Patient Id If Present",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "hasPid",
+              "leftValue": "={{ $json.patientId !== null && $json.patientId !== undefined && $json.patientId !== '' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5787e2c2-83c2-44df-bd11-140a60e441f2",
+      "name": "Has Patient Id To Persist?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -128,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ ($vars.SPRING_BOOT_BASE_URL || 'http://backend:8080') + '/api/n8n/sessions/' + $json.sessionId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { patientId: $json.patientId, patientName: $json.patientName } }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "676130dc-0c58-446a-b517-ebd7f9a09a06",
+      "name": "Persist Patient Id",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        672
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prefer current input (QR path already merged), else Attach Patient Id path\nconst fromInput = $json || {};\nlet session = fromInput;\n\nif (!fromInput.sessionId) {\n  try {\n    const attached = $('Attach Patient Id If Present').first();\n    if (attached && attached.json && attached.json.sessionId) {\n      session = attached.json;\n    }\n  } catch (e) {}\n}\n\nreturn [{ json: session }];"
+      },
+      "id": "8f654429-1ec3-4ea4-9422-099e281a902f",
+      "name": "Session With Patient",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.SPRING_BOOT_BASE_URL || 'http://backend:8080'}}/api/n8n/clinics/sessions/active",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "whatsappNumber",
+              "value": "={{$('Parse Twilio Payload & QR Code').first()?.json?.whatsappNumber}}"
+            },
+            {
+              "name": "clinicId",
+              "value": "={{$('Normalize Identified Patient').first()?.json?.clinicId}}"
+            },
+            {
+              "name": "patientToken",
+              "value": "={{$('Parse Twilio Payload & QR Code').first()?.json?.patientToken || null}}"
+            },
+            {
+              "name": "patientId",
+              "value": "={{$('Normalize Identified Patient').first()?.json?.patientId}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "497161c9-f99f-4a92-9bf6-d17e026af649",
+      "name": "Get Or Create Session With Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const session = $json || {};\nconst identified = $('Normalize Identified Patient').first()?.json || {};\n\n// Backend 404 body may look like { code, message } without sessionId\nconst hasSession = session.sessionId != null || session.id != null;\nconst sessionId = session.sessionId || session.id || null;\nconst patientId = session.patientId || identified.patientId || null;\nconst patientName = session.patientName || identified.patientName || null;\nconst clinicId = session.clinicId || identified.clinicId || null;\n\nif (!hasSession) {\n  return [{\n    json: {\n      error: true,\n      message: session.message || 'Failed to create session',\n      patientId,\n      patientName,\n      clinicId,\n      whatsappNumber: identified.whatsappNumber,\n      reply_to_patient: 'Sorry, I could not start your booking session. Please scan the QR code again.'\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    ...session,\n    sessionId,\n    patientId,\n    patientName,\n    clinicId,\n    whatsappNumber: session.whatsappNumber || identified.whatsappNumber,\n    state: session.state || 'STARTED',\n    intent: session.intent || 'BOOK_APPOINTMENT',\n    error: false\n  }\n}];"
+      },
+      "id": "e590d27d-01bb-4015-b967-debacb0e863b",
+      "name": "Merge QR Session",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e2c1340a-13aa-47bd-8199-2a2ce012846f",
+      "name": "Session Create Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        96,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $json.reply_to_patient || 'Sorry, could not start session. Please scan QR again.' }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ede9374a-1cc3-4323-bcd9-a2f8c53fa950",
+      "name": "Respond Session Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        320,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "nosess",
+              "leftValue": "={{ $json.noSession }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "69a404a6-d4cf-4473-a5f0-aa863f701c01",
+      "name": "No Active Session?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -352,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Response>\n    <Message><![CDATA[{{ $json.reply_to_patient }}]]></Message>\n</Response>",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/xml"
+              }
+            ]
+          }
+        }
+      },
+      "id": "e55b44c2-0b9a-4779-900d-153a06e562a1",
+      "name": "Respond No Session",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -128,
+        800
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Twilio Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Twilio Payload & QR Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Twilio Payload & QR Code": {
+      "main": [
+        [
+          {
+            "node": "Has Token QR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Token QR?": {
+      "main": [
+        [
+          {
+            "node": "Identify Patient",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Active Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Patient": {
+      "main": [
+        [
+          {
+            "node": "Normalize Identified Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Session": {
+      "main": [
+        [
+          {
+            "node": "Attach Patient Id If Present",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Waiting For Slot?": {
+      "main": [
+        [
+          {
+            "node": "Get Availability For Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Collecting Name?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability For Slot": {
+      "main": [
+        [
+          {
+            "node": "Handle Slot Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Slot Selection": {
+      "main": [
+        [
+          {
+            "node": "No Slots From Availability?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Selected Valid?": {
+      "main": [
+        [
+          {
+            "node": "Has Name After Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Slot Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Name After Slot?": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Selected Slot State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment": {
+      "main": [
+        [
+          {
+            "node": "Process Booking Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Booking Response": {
+      "main": [
+        [
+          {
+            "node": "Booking Slot Conflict?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Booked Session": {
+      "main": [
+        [
+          {
+            "node": "Respond Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Selected Slot State": {
+      "main": [
+        [
+          {
+            "node": "Respond Slot Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collecting Name?": {
+      "main": [
+        [
+          {
+            "node": "Set Patient Name",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Clinic Doctors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Patient Name": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment From Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment From Name": {
+      "main": [
+        [
+          {
+            "node": "Process Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Name Booking": {
+      "main": [
+        [
+          {
+            "node": "Name Booking Slot Conflict?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Name Booking": {
+      "main": [
+        [
+          {
+            "node": "Respond Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Parser Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Gemini": {
+      "main": [
+        [
+          {
+            "node": "Parse AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI": {
+      "main": [
+        [
+          {
+            "node": "Process AI Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process AI Selection": {
+      "main": [
+        [
+          {
+            "node": "Update AI Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Needs Availability?": {
+      "main": [
+        [
+          {
+            "node": "Get Service For Doctor AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond AI Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability": {
+      "main": [
+        [
+          {
+            "node": "Format Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Availability": {
+      "main": [
+        [
+          {
+            "node": "Update Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session": {
+      "main": [
+        [
+          {
+            "node": "Respond With Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update AI Session": {
+      "main": [
+        [
+          {
+            "node": "AI Needs Availability?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Slots From Availability?": {
+      "main": [
+        [
+          {
+            "node": "Update Session No Slots",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slot Selected Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session No Slots": {
+      "main": [
+        [
+          {
+            "node": "Respond No Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking Slot Conflict?": {
+      "main": [
+        [
+          {
+            "node": "Refresh Availability After Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Booked Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Name Booking Slot Conflict?": {
+      "main": [
+        [
+          {
+            "node": "Refresh Availability After Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Name Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Availability After Conflict": {
+      "main": [
+        [
+          {
+            "node": "Format Conflict Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Conflict Availability": {
+      "main": [
+        [
+          {
+            "node": "Update Session After Slot Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session After Slot Conflict": {
+      "main": [
+        [
+          {
+            "node": "Respond Slot Conflict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Clinic Doctors": {
+      "main": [
+        [
+          {
+            "node": "Already Collecting Date?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Collecting Date?": {
+      "main": [
+        [
+          {
+            "node": "Try Parse Date Directly",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Single Doctor Clinic?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Single Doctor Clinic?": {
+      "main": [
+        [
+          {
+            "node": "Auto Select Single Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build AI Parser Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto Select Single Doctor": {
+      "main": [
+        [
+          {
+            "node": "Get Service For Doctor Auto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session Auto Single Doctor": {
+      "main": [
+        [
+          {
+            "node": "Respond Single Doctor Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Try Parse Date Directly": {
+      "main": [
+        [
+          {
+            "node": "Is Plain Date?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Plain Date?": {
+      "main": [
+        [
+          {
+            "node": "Shape Direct Date Selection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build AI Parser Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Direct Date Selection": {
+      "main": [
+        [
+          {
+            "node": "Get Service For Doctor Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session After Date": {
+      "main": [
+        [
+          {
+            "node": "Get Availability Direct Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Availability Direct Date": {
+      "main": [
+        [
+          {
+            "node": "Format Availability Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Availability Direct": {
+      "main": [
+        [
+          {
+            "node": "Update Session After Slots Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Session After Slots Direct": {
+      "main": [
+        [
+          {
+            "node": "Respond Slots Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service For Doctor Direct": {
+      "main": [
+        [
+          {
+            "node": "Merge Service Direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Service Direct": {
+      "main": [
+        [
+          {
+            "node": "Update Session After Date",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service For Doctor AI": {
+      "main": [
+        [
+          {
+            "node": "Merge Service AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Service AI": {
+      "main": [
+        [
+          {
+            "node": "Get Availability",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Service For Doctor Auto": {
+      "main": [
+        [
+          {
+            "node": "Merge Service Auto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Service Auto": {
+      "main": [
+        [
+          {
+            "node": "Update Session Auto Single Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Identified Patient": {
+      "main": [
+        [
+          {
+            "node": "Get Or Create Session With Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Patient Id If Present": {
+      "main": [
+        [
+          {
+            "node": "No Active Session?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Patient Id To Persist?": {
+      "main": [
+        [
+          {
+            "node": "Persist Patient Id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Session With Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Patient Id": {
+      "main": [
+        [
+          {
+            "node": "Session With Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session With Patient": {
+      "main": [
+        [
+          {
+            "node": "Waiting For Slot?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Or Create Session With Patient": {
+      "main": [
+        [
+          {
+            "node": "Merge QR Session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge QR Session": {
+      "main": [
+        [
+          {
+            "node": "Session Create Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Create Failed?": {
+      "main": [
+        [
+          {
+            "node": "Respond Session Error",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Session With Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Active Session?": {
+      "main": [
+        [
+          {
+            "node": "Respond No Session",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Patient Id To Persist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c802ca60-5459-489c-8d3d-3b143af6806c",
+  "meta": {
+    "instanceId": "77f0b1abf9817a32d1efa1a42f9c26ed4bbb02235ed41bcaacfa7a070212ea80"
+  },
+  "nodeGroups": [],
+  "id": "az75NnRVjPNMIc7D",
+  "tags": []
+}

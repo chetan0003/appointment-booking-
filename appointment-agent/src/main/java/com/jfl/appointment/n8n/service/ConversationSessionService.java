@@ -9,6 +9,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 public class ConversationSessionService {
@@ -17,6 +20,7 @@ public class ConversationSessionService {
     private final ClinicRepository clinicRepository;
     private final ServiceOfferingRepository serviceRepository;
     private final DoctorRepository doctorRepository;
+    private final PatientRepository patientRepository;
 
     /**
      * Called at the top of every n8n run for an inbound WhatsApp message.
@@ -24,20 +28,82 @@ public class ConversationSessionService {
      * This is what lets the AI "remember" what's already been collected
      * (design doc section 8) without n8n itself holding any state.
      */
+//    @Transactional
+//    public SessionResponse findOrCreateActiveSession(Long clinicId, String whatsappNumber, Long patientId) {
+//        ConversationSession session = sessionRepository.findActiveSession(clinicId, patientId, whatsappNumber)
+//                .orElseGet(() -> {
+//                    Clinic clinic = clinicRepository.findById(clinicId)
+//                            .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+//                    Patient patient = patientRepository.findById(patientId)
+//                            .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+//                    ConversationSession s = new ConversationSession();
+//                    s.setClinic(clinic);
+//                    s.setPatient(patient);
+//                    s.setWhatsappNumber(whatsappNumber);
+//                    s.setState(ConversationState.STARTED);
+//                    return sessionRepository.save(s);
+//                });
+//        return toResponse(session);
+//    }
+
     @Transactional
-    public SessionResponse findOrCreateActiveSession(Long clinicId, String whatsappNumber) {
-        ConversationSession session = sessionRepository.findActiveSession(clinicId, whatsappNumber)
-                .orElseGet(() -> {
-                    Clinic clinic = clinicRepository.findById(clinicId)
-                            .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
-                    ConversationSession s = new ConversationSession();
-                    s.setClinic(clinic);
-                    s.setWhatsappNumber(whatsappNumber);
-                    s.setState(ConversationState.STARTED);
-                    return sessionRepository.save(s);
-                });
-        return toResponse(session);
+    public SessionResponse findOrCreateActiveSession(Long clinicId, String whatsappNumber, Long patientId,String source) {
+        // 1. List all terminal states that count as "finished" sessions
+        List<ConversationState> terminalStates = List.of(
+                ConversationState.BOOKED,
+                ConversationState.ABANDONED
+        );
+
+        // 2. Look up the most recent non-terminal session for this phone number
+        Optional<ConversationSession> activeSession = sessionRepository
+                .findTopByWhatsappNumberAndStateNotInOrderByUpdatedAtDesc(whatsappNumber, terminalStates);
+
+        // Clinic QR: clinicId present, patientId null, source=CLINIC_QR (or similar)
+        if ("CLINIC".equals(source) && clinicId != null && patientId == null) {
+            activeSession.ifPresent(existing -> {
+                existing.setState(ConversationState.ABANDONED);
+                sessionRepository.save(existing);
+            });
+            Clinic clinic = clinicRepository.findById(clinicId)
+                    .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+            ConversationSession newSession = new ConversationSession();
+            newSession.setClinic(clinic);
+            newSession.setPatient(null); // walk-in
+            newSession.setWhatsappNumber(whatsappNumber);
+            newSession.setState(ConversationState.STARTED);
+            return toResponse(sessionRepository.save(newSession));
+        }
+
+
+        // 3. IF QR Code data is provided (new booking flow started)
+        if ("PATIENT".equalsIgnoreCase(source) && patientId != null && clinicId != null) {
+            // Abandon previous incomplete session if user scanned a new QR code
+            activeSession.ifPresent(existing -> {
+                existing.setState(ConversationState.ABANDONED);
+                sessionRepository.save(existing);
+            });
+
+            Clinic clinic = clinicRepository.findById(clinicId)
+                    .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+            Patient patient = patientRepository.findById(patientId)
+                    .orElseThrow(() -> new NotFoundException("Patient not found: " + patientId));
+
+            ConversationSession newSession = new ConversationSession();
+            newSession.setClinic(clinic);
+            newSession.setPatient(patient);
+            newSession.setWhatsappNumber(whatsappNumber);
+            newSession.setState(ConversationState.STARTED);
+
+            return toResponse(sessionRepository.save(newSession));
+        }
+
+        // 4. IF plain text reply (patientId & clinicId are null), return ongoing session
+        ConversationSession existing = activeSession
+                .orElseThrow(() -> new NotFoundException("No active session found for number: " + whatsappNumber));
+
+        return toResponse(existing);
     }
+
 
     @Transactional
     public SessionResponse updateSession(Long sessionId, UpdateSessionRequest request) {
@@ -86,6 +152,7 @@ public class ConversationSessionService {
                 s.getAppointmentDate(),
                 s.getSelectedStartTime(),
                 s.getPatientName(),
+                s.getPatient() != null ? s.getPatient().getId() : null,
                 s.getState()
         );
     }

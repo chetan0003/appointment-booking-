@@ -1,0 +1,803 @@
+{
+  "name": "Notification Dispatch - Every 15 Min (Twilio)",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{'http://backend:8080/api/dashboard/notifications/due?channel=WHATSAPP' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "30823261-40c0-4c15-ab8a-1a30364f68da",
+      "name": "Get Due Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1104,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process all items returned from the HTTP Request node\nreturn $input.all().map(item => {\n  const a = item.json;\n  const dateObj = new Date(a.appointmentDate + 'T00:00:00');\n  const dateLabel = dateObj.toLocaleDateString('en-IN', { weekday: 'long', month: 'long', day: 'numeric' });\n  const [h, m] = a.startTime.split(':').map(Number);\n  const hour12 = h % 12 || 12;\n  const timeLabel = `${hour12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;\n\n  return {\n    json: {\n      ...a,\n      dateLabel,\n      timeLabel\n    }\n  };\n});"
+      },
+      "id": "d8f039ad-b357-4ae4-a3f4-3649ef2224ff",
+      "name": "Format Message Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 5,
+        "output": "={{ $json.type === 'REMINDER_24H' ? 0 : $json.type === 'FOLLOW_UP_SUGGESTED' ? 1 : $json.type === 'RESCHEDULED' ? 2 : $json.type === 'BOOKING_CONFIRMATION' ? 3 : $json.type === 'CANCEL_BOOKING_CONFIRMATION' ? 4 : 5 }}"
+      },
+      "id": "f01a98cc-6da9-4d46-83c9-4806b618d9db",
+      "name": "Which Template?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -656,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "from": "=+14155238886",
+        "to": "={{ $json.patientPhone.replace(/\\s+/g, '') }}",
+        "toWhatsapp": true,
+        "message": "={{ 'Hello ' + $json.patientName + ', this is a reminder for your ' + $json.serviceName + ' appointment with Dr. ' + $json.doctorName + ' on ' + $json.dateLabel + ' at ' + $json.timeLabel + '.' }}",
+        "options": {}
+      },
+      "id": "03bdadb8-543b-4ca0-bfa7-19e369747630",
+      "name": "Send Reminder Message",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        64
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "OnD3K8Ea1lZ1wiBS",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "=+14155238886",
+        "to": "={{ $json.patientPhone.replace(/\\s+/g, '') }}",
+        "toWhatsapp": true,
+        "message": "={{ 'Hello ' + $json.patientName + ', we suggest booking a follow-up for your ' + $json.serviceName + ' appointment.' }}",
+        "options": {}
+      },
+      "id": "2985c40d-0f1e-407e-9445-279ffcd130bc",
+      "name": "Send Follow-Up Message",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        240
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "OnD3K8Ea1lZ1wiBS",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "=+14155238886",
+        "to": "={{ $json.patientPhone.replace(/\\s+/g, '') }}",
+        "toWhatsapp": true,
+        "message": "={{ 'Hello ' + $json.patientName + ', your appointment has been rescheduled to ' + $json.dateLabel + ' at ' + $json.timeLabel + '.' }}",
+        "options": {}
+      },
+      "id": "58838321-a9b6-4f2a-babe-38f01409a19b",
+      "name": "Send Reschedule Message",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        416
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "OnD3K8Ea1lZ1wiBS",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sid }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "732a02ac-c8d8-437a-9c89-b713199be045",
+      "name": "Send Reminder OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-sent' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "44eb820a-67f7-4c69-816e-d7354f50f4bb",
+      "name": "Mark Sent (Send Reminder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ errorMessage: ($json.message || $json.error) || 'Twilio send failed' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "daf03973-6b6e-45a6-a4dc-0bcfc3cafdeb",
+      "name": "Mark Failed (Send Reminder)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sid }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f2cb19ab-a830-46f2-bb45-71dc6a578db0",
+      "name": "Send Follow-Up OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-sent' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "f7de13be-7e77-4873-8c6d-4767e6033329",
+      "name": "Mark Sent (Send Follow-Up)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ errorMessage: ($json.message || $json.error) || 'Twilio send failed' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "df4fd41f-70b4-4996-8db7-cca90f6673b9",
+      "name": "Mark Failed (Send Follow-Up)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sid }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "056bcc94-5f7d-472e-a63d-f464e15bc5bb",
+      "name": "Send Reschedule OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-sent' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "263af8f5-bfaf-497b-aec6-f682aeb8f0f8",
+      "name": "Mark Sent (Send Reschedule)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ errorMessage: ($json.message || $json.error) || 'Twilio send failed' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d7cf8c77-7557-492d-9fe3-374ae2dae50a",
+      "name": "Mark Failed (Send Reschedule)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "from": "=+14155238886",
+        "to": "={{ $json.patientPhone.replace(/\\s+/g, '') }}",
+        "toWhatsapp": true,
+        "message": "={{ 'Hello ' + $json.patientName + ', your appointment has been booked to ' + $json.dateLabel + ' at ' + $json.timeLabel + '.' }}",
+        "options": {}
+      },
+      "id": "889f145b-6c84-4756-963c-af86c4bad437",
+      "name": "Send Booking Message",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        592
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "OnD3K8Ea1lZ1wiBS",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sid }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              },
+              "id": "a9431031-ea8e-4b74-88d5-414099d3d264"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "14b4bf86-2b32-4486-a3b4-61ad5ad64af0",
+      "name": "Send Booking OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-sent' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "2e37b9f1-1778-49f4-8007-fb4ebe0deeea",
+      "name": "Mark Sent Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ errorMessage: ($json.message || $json.error) || 'Twilio send failed' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "af420162-6c01-4ad2-ba85-9820f4445a2c",
+      "name": "Mark Failed Booking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "from": "=+14155238886",
+        "to": "={{ $json.patientPhone.replace(/\\s+/g, '') }}",
+        "toWhatsapp": true,
+        "message": "={{ 'Hello ' + $json.patientName + ', your appointment has been cancelled to ' + $json.dateLabel + ' at ' + $json.timeLabel + '.' }}",
+        "options": {}
+      },
+      "id": "7a6715ea-c036-49de-b8bd-d5202cc33834",
+      "name": "Send Cancel Message",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        -448,
+        800
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "OnD3K8Ea1lZ1wiBS",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.sid }}",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              },
+              "id": "a9431031-ea8e-4b74-88d5-414099d3d264"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "55da1abe-48ed-45ee-ac30-3566815ab979",
+      "name": "Send Cancel OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -224,
+        960
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-sent' }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "49628b61-65dc-4449-be37-0163dac07f0d",
+      "name": "Mark Sent Cancel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://backend:8080/api/dashboard/notifications/' + $('Format Message Fields').item.json.notificationId + '/mark-failed' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ errorMessage: ($json.message || $json.error) || 'Twilio send failed' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "d2c93eb5-0842-4069-9f50-725393c65c15",
+      "name": "Mark Failed Canel",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        16,
+        1120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "5920b3e2-0c62-4709-94fa-cf60028d6275",
+      "name": "Every 30 Min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1328,
+        240
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Get Due Notifications": {
+      "main": [
+        [
+          {
+            "node": "Format Message Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Message Fields": {
+      "main": [
+        [
+          {
+            "node": "Which Template?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Which Template?": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Follow-Up Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Reschedule Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Booking Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Cancel Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent (Send Reminder)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Send Reminder)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up Message": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-Up OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-Up OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent (Send Follow-Up)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Send Follow-Up)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reschedule Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reschedule OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reschedule OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent (Send Reschedule)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed (Send Reschedule)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Booking Message": {
+      "main": [
+        [
+          {
+            "node": "Send Booking OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Booking OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent Booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed Booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Cancel Message": {
+      "main": [
+        [
+          {
+            "node": "Send Cancel OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Cancel OK?": {
+      "main": [
+        [
+          {
+            "node": "Mark Sent Cancel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Failed Canel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 30 Min": {
+      "main": [
+        [
+          {
+            "node": "Get Due Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2e0e8efd-7c04-4d3b-ae0a-b59171833562",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "77f0b1abf9817a32d1efa1a42f9c26ed4bbb02235ed41bcaacfa7a070212ea80"
+  },
+  "nodeGroups": [],
+  "id": "cRGckG5ybZRYxHwl",
+  "tags": []
+}

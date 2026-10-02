@@ -1,6 +1,8 @@
 package com.jfl.appointment.security;
 
 
+import com.jfl.appointment.exception.CustomAccessDeniedHandler;
+import com.jfl.appointment.exception.CustomAuthenticationEntryPoint;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.context.annotation.Bean;
@@ -32,6 +34,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     private final CustomUserDetailsService userDetailsService;
+    private final CustomAccessDeniedHandler accessDeniedHandler;
+    private final CustomAuthenticationEntryPoint authenticationEntryPoint;
+
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -79,14 +84,20 @@ public class SecurityConfig {
                                 SessionCreationPolicy.STATELESS
                         )
                 )
-
+                .exceptionHandling(exception -> exception
+                        .accessDeniedHandler(accessDeniedHandler)
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                )
                 .authorizeHttpRequests(auth -> auth
 
                         // Authentication
                         .requestMatchers(
                                 "/api/auth/**"
                         ).permitAll()
-
+                        .requestMatchers("/api/subscription-plans")
+                        .permitAll()
+                        .requestMatchers("/api/subscription-plans/**")
+                        .permitAll()
                         // Public WhatsApp/n8n APIs
                         .requestMatchers(
                                 "/api/clinics/*/services",
@@ -94,9 +105,19 @@ public class SecurityConfig {
                                 "/api/clinics/*/availability",
                                 "/api/sessions/**",
                                 "/api/appointments",
-                                "/api/n8n/**"
+                                "/api/n8n/**",
+                                "/api/dashboard/notifications/**",
+                                "/api/public/patient-qr/**",
+                                "/actuator/health"
                         ).permitAll()
 
+                        .requestMatchers("/api/users/**")
+                        .hasAnyRole(
+                                "SUPER_ADMIN",
+                                "CLINIC_ADMIN",
+                                "DOCTOR",
+                                "STAFF"
+                        )
                         // Super admin
                         .requestMatchers(
                                 "/api/admin/**"
