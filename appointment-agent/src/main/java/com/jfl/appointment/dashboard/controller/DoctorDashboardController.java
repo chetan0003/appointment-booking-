@@ -62,11 +62,15 @@ public class DoctorDashboardController {
                 request.serviceId()
         );
 
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(clinicId);
+
         // --------------------------------------------------
         // 1. Validate Feature
         // --------------------------------------------------
         subscriptionFeatureService.validateFeature(
                 clinicId,
+                subscription,
                 SubscriptionFeature.DOCTORS
         );
         // --------------------------------------------------

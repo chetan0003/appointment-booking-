@@ -1,6 +1,7 @@
 package com.jfl.appointment.n8n.service;
 
 import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
+import com.jfl.appointment.dashboard.service.NotificationService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.exception.SlotUnavailableException;
@@ -36,6 +37,7 @@ public class AppointmentService {
     private final NotificationSchedulingService notificationSchedulingService;
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final AppointmentPaymentRepository appointmentPaymentRepository;
+    private final NotificationService notificationService;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -55,10 +57,11 @@ public class AppointmentService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
         log.info("createAppointment: {},{},{}",request.clinicId(), request.patientName(),request.appointmentDate());
-
+        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(request.clinicId());
         //VALIDATE SUBSCRIPTION PLAN
         subscriptionFeatureService.validateFeatureOnWhats(
-                request.clinicId()
+                request.clinicId(),
+                subscription
         );
 
         if (request.qrType().isBlank())
@@ -147,7 +150,18 @@ public class AppointmentService {
         appointmentPaymentRepository.save(payment);
 
         //notification
-        notificationSchedulingService.scheduleBookingReminder(saved);
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            notificationSchedulingService.scheduleBookingReminder(saved);
+        }
+        // =================================================================================
+        // 11. IN-APP notification
+        // =================================================================================
+        notificationService.createAppointmentNotifications(
+                clinic,appointment,
+                doctor.getId(),
+                patient.getName(),
+                doctor.getName()
+        );
         return toResponse(saved);
     }
 

@@ -16,7 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
+
 
 import java.time.LocalDate;
 import java.util.List;
@@ -35,9 +35,12 @@ public class PatientService {
             Long clinicId,
             CreatePatientRequest request) {
 
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(clinicId);
         //VALIDATE SUBSCRIPTION PLAN
         subscriptionFeatureService.validateFeature(
                 clinicId,
+                subscription,
                 SubscriptionFeature.PATIENTS
         );
 

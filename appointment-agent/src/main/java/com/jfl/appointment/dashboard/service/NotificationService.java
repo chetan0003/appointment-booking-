@@ -1,12 +1,18 @@
 package com.jfl.appointment.dashboard.service;
 
-import com.jfl.appointment.dashboard.dto.NotificationDto;
+import com.jfl.appointment.dto.AppNotificationResponse;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
-import com.jfl.appointment.repository.AppointmentRepository;
-import com.jfl.appointment.repository.NotificationRepository;
+import com.jfl.appointment.repository.AppNotificationRepository;
+import com.jfl.appointment.repository.AppUserRepository;
+import com.jfl.appointment.repository.ClinicUserRepository;
+import com.jfl.appointment.security.SecurityContextService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,283 +24,210 @@ import java.util.List;
 @Slf4j
 public class NotificationService {
 
-    private final NotificationRepository notificationRepository;
-    private final AppointmentRepository appointmentRepository;
+    private final AppNotificationRepository notificationRepository;
+    private final ClinicUserRepository recipientRepository;
+    private final SecurityContextService securityContextService;
+    private final AppUserRepository appUserRepository;
 
     // =========================================================
-    // Create Notification
+    // CREATE APPOINTMENT NOTIFICATIONS
     // =========================================================
 
     @Transactional
-    public NotificationDto createNotification(
-            Long appointmentId,
-            NotificationType type,
-            NotificationChannel channel,
-            LocalDateTime scheduledAt) {
+    public void createAppointmentNotifications(
+            Clinic clinic,
+            Appointment appointment,
+            Long doctorId,
+            String patientName,
+            String doctorName
+    ) {
 
-        Appointment appointment =
-                appointmentRepository
-                        .findById(appointmentId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Appointment not found: "
-                                                + appointmentId
-                                )
-                        );
+        List<Long> recipientIds =
+                recipientRepository.findAppointmentRecipients(
+                        clinic.getId(),
+                        doctorId
+                );
 
-        // -----------------------------------------------------
-        // Prevent duplicate notification
-        // -----------------------------------------------------
-
-        boolean alreadyExists =
-                notificationRepository
-                        .existsByAppointmentIdAndTypeAndChannel(
-                                appointmentId,
-                                type,
-                                channel
-                        );
-
-        if (alreadyExists) {
-
+        if (recipientIds == null || recipientIds.isEmpty()) {
             log.info(
-                    "Notification already exists. appointmentId={}, type={}, channel={}",
-                    appointmentId,
-                    type,
-                    channel
+                    "No notification recipients found for clinicId: {}",
+                    clinic.getId()
             );
-
-            return notificationRepository
-                    .findByAppointmentIdOrderByCreatedAtDesc(
-                            appointmentId
-                    )
-                    .stream()
-                    .filter(n ->
-                            n.getType() == type
-                                    && n.getChannel() == channel
-                    )
-                    .findFirst()
-                    .map(this::toDto)
-                    .orElseThrow();
+            return;
         }
 
-        // -----------------------------------------------------
-        // Create notification
-        // -----------------------------------------------------
+        String title = "New Appointment";
 
-        Notification notification =
-                Notification.builder()
-                        .appointment(appointment)
-                        .type(type)
-                        .channel(channel)
-                        .status(NotificationStatus.PENDING)
-                        .scheduledAt(scheduledAt)
-                        .build();
+        String message = "New appointment booked for "
+                + patientName
+                + " with Dr. "
+                + doctorName;
 
-        Notification saved =
-                notificationRepository.save(notification);
+        List<AppNotification> notifications = recipientIds.stream()
+                .distinct()
+                .map(userId -> {
+
+                    AppUser recipient = appUserRepository
+                            .findById(
+                                    userId
+                            )
+                            .orElseThrow(() ->
+                                    new NotFoundException(
+                                            "Recipient not found for userId: "
+                                                    + userId
+                                    )
+                            );
+
+                    AppNotification notification = new AppNotification();
+
+                    notification.setClinic(clinic);
+                    notification.setRecipient(recipient);
+                    notification.setAppointment(appointment);
+                    notification.setType(
+                            AppNotificationType.APPOINTMENT_CREATED
+                    );
+                    notification.setTitle(title);
+                    notification.setMessage(message);
+                    notification.setRead(false);
+
+                    return notification;
+                })
+                .toList();
+
+        notificationRepository.saveAll(notifications);
 
         log.info(
-                "Notification created. id={}, appointmentId={}, type={}, channel={}, scheduledAt={}",
-                saved.getId(),
-                appointmentId,
-                type,
-                channel,
-                scheduledAt
-        );
-
-        return toDto(saved);
-    }
-
-    // =========================================================
-    // Booking Confirmation
-    // =========================================================
-
-    @Transactional
-    public NotificationDto createBookingConfirmation(
-            Appointment appointment) {
-
-        return createNotification(
-                appointment.getId(),
-                NotificationType.BOOKING_CONFIRMATION,
-                NotificationChannel.WHATSAPP,
-                LocalDateTime.now()
+                "Created {} appointment notifications for appointmentId: {}",
+                notifications.size(),
+                appointment.getId()
         );
     }
 
     // =========================================================
-    // Rescheduled Notification
-    // =========================================================
-
-    @Transactional
-    public NotificationDto createRescheduledNotification(
-            Appointment appointment) {
-
-        return createNotification(
-                appointment.getId(),
-                NotificationType.RESCHEDULED,
-                NotificationChannel.WHATSAPP,
-                LocalDateTime.now()
-        );
-    }
-
-    // =========================================================
-    // Follow-up Suggested Notification
-    // =========================================================
-
-    @Transactional
-    public NotificationDto createFollowUpSuggestedNotification(
-            Appointment appointment) {
-
-        return createNotification(
-                appointment.getId(),
-                NotificationType.FOLLOW_UP_SUGGESTED,
-                NotificationChannel.WHATSAPP,
-                LocalDateTime.now()
-        );
-    }
-
-    // =========================================================
-    // 24 Hour Reminder
-    // =========================================================
-
-    @Transactional
-    public NotificationDto create24HourReminder(
-            Appointment appointment,
-            LocalDateTime scheduledAt) {
-
-        return createNotification(
-                appointment.getId(),
-                NotificationType.REMINDER_24H,
-                NotificationChannel.WHATSAPP,
-                scheduledAt
-        );
-    }
-
-    // =========================================================
-    // Get Appointment Notifications
+    // GET ALL NOTIFICATIONS
     // =========================================================
 
     @Transactional(readOnly = true)
-    public List<NotificationDto> getAppointmentNotifications(
-            Long appointmentId) {
+    public Page<AppNotificationResponse> getNotifications(
+            Long clinicId,
+            Pageable pageable
+    ) {
 
-        if (!appointmentRepository.existsById(appointmentId)) {
-
-            throw new NotFoundException(
-                    "Appointment not found: " + appointmentId
-            );
-        }
+        Long userId = securityContextService.getCurrentUserId();
 
         return notificationRepository
-                .findByAppointmentIdOrderByCreatedAtDesc(
-                        appointmentId
+                .findByClinic_IdAndRecipient_IdOrderByCreatedAtDesc(
+                        clinicId,
+                        userId,
+                        pageable
                 )
-                .stream()
-                .map(this::toDto)
-                .toList();
+                .map(this::toResponse);
     }
 
     // =========================================================
-    // Get Pending Notifications
+    // GET UNREAD NOTIFICATIONS
     // =========================================================
 
     @Transactional(readOnly = true)
-    public List<Notification> getPendingNotifications() {
+    public Page<AppNotificationResponse> getUnreadNotifications(
+            Long clinicId,
+            Pageable pageable
+    ) {
+
+        Long userId = securityContextService.getCurrentUserId();
 
         return notificationRepository
-                .findByStatusAndScheduledAtLessThanEqual(
-                        NotificationStatus.PENDING,
-                        LocalDateTime.now()
+                .findByClinic_IdAndRecipient_IdAndReadFalseOrderByCreatedAtDesc(
+                        clinicId,
+                        userId,
+                        pageable
+                )
+                .map(this::toResponse);
+    }
+
+    // =========================================================
+    // GET UNREAD COUNT
+    // =========================================================
+
+    @Transactional(readOnly = true)
+    public long getUnreadCount(Long clinicId) {
+
+        Long userId = securityContextService.getCurrentUserId();
+
+        return notificationRepository
+                .countByClinic_IdAndRecipient_IdAndReadFalse(
+                        clinicId,
+                        userId
                 );
     }
 
     // =========================================================
-    // Mark Sent
+    // MARK SINGLE NOTIFICATION AS READ
     // =========================================================
 
     @Transactional
-    public void markAsSent(Long notificationId) {
+    public void markAsRead(
+            Long clinicId,
+            Long notificationId
+    ) {
 
-        Notification notification =
+        Long userId = securityContextService.getCurrentUserId();
+
+        AppNotification notification =
                 notificationRepository
-                        .findById(notificationId)
+                        .findByIdAndClinic_IdAndRecipient_Id(
+                                notificationId,
+                                clinicId,
+                                userId
+                        )
                         .orElseThrow(() ->
                                 new NotFoundException(
-                                        "Notification not found: "
-                                                + notificationId
+                                        "Notification not found"
                                 )
                         );
 
-        notification.setStatus(
-                NotificationStatus.SENT
-        );
+        if (!notification.isRead()) {
+            notification.setRead(true);
+            notification.setReadAt(LocalDateTime.now());
 
-        notification.setSentAt(
-                LocalDateTime.now()
-        );
+            notificationRepository.save(notification);
+        }
+    }
 
-        notificationRepository.save(notification);
+    // =========================================================
+    // MARK ALL NOTIFICATIONS AS READ
+    // =========================================================
 
-        log.info(
-                "Notification marked as SENT. notificationId={}",
-                notificationId
+    @Transactional
+    public void markAllAsRead(Long clinicId) {
+
+        Long userId = securityContextService.getCurrentUserId();
+
+        notificationRepository.markAllAsRead(
+                clinicId,
+                userId
         );
     }
 
     // =========================================================
-    // Mark Failed
+    // ENTITY TO RESPONSE DTO
     // =========================================================
 
-    @Transactional
-    public void markAsFailed(
-            Long notificationId,
-            String errorMessage) {
+    private AppNotificationResponse toResponse(
+            AppNotification notification
+    ) {
 
-        Notification notification =
-                notificationRepository
-                        .findById(notificationId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Notification not found: "
-                                                + notificationId
-                                )
-                        );
-
-        notification.setStatus(
-                NotificationStatus.FAILED
-        );
-
-        notification.setErrorMessage(
-                errorMessage
-        );
-
-        notificationRepository.save(notification);
-
-        log.error(
-                "Notification marked as FAILED. notificationId={}, error={}",
-                notificationId,
-                errorMessage
-        );
-    }
-
-    // =========================================================
-    // Mapper
-    // =========================================================
-
-    private NotificationDto toDto(
-            Notification notification) {
-
-        return new NotificationDto(
+        return new AppNotificationResponse(
                 notification.getId(),
-                notification.getAppointment().getId(),
                 notification.getType(),
-                notification.getChannel(),
-                notification.getStatus(),
-                notification.getScheduledAt(),
-                notification.getSentAt(),
-                notification.getErrorMessage(),
+                notification.getTitle(),
+                notification.getMessage(),
+                notification.getAppointment() != null
+                        ? notification.getAppointment().getId()
+                        : null,
+                notification.isRead(),
                 notification.getCreatedAt(),
-                notification.getUpdatedAt()
+                notification.getReadAt()
         );
     }
 }

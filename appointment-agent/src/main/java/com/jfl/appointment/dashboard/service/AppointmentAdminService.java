@@ -49,6 +49,7 @@ public class AppointmentAdminService {
     private final NotificationRepository notificationRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final AppointmentPaymentRepository appointmentPaymentRepository;
+    private final NotificationService notificationService;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
@@ -62,10 +63,12 @@ public class AppointmentAdminService {
                 request.doctorId(),
                 request.serviceId()
         );
-
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(clinicId);
         //VALIDATE SUBSCRIPTION PLAN
         subscriptionFeatureService.validateFeature(
                 clinicId,
+                subscription,
                 SubscriptionFeature.APPOINTMENTS
         );
         // Idempotency: if a request with this key already produced a booking, return it
@@ -77,9 +80,9 @@ public class AppointmentAdminService {
                 return toDto(existing.get());
             }
         }
-        // =====================================================
+        // ==========================================================================
         // 1. Validate clinic
-        // =====================================================
+        // ==========================================================================
 
         Clinic clinic = clinicRepository
                 .findById(clinicId)
@@ -89,9 +92,9 @@ public class AppointmentAdminService {
                         )
                 );
 
-        // =====================================================
+        // ===============================================================================
         // 2. Validate patient
-        // =====================================================
+        // ===============================================================================
 
         Patient patient = patientRepository
                 .findById(request.patientId())
@@ -108,9 +111,9 @@ public class AppointmentAdminService {
             );
         }
 
-        // =====================================================
+        // =============================================================================
         // 3. Validate doctor
-        // =====================================================
+        // =============================================================================
 
         Doctor doctor = doctorRepository
                 .findById(request.doctorId())
@@ -130,9 +133,9 @@ public class AppointmentAdminService {
             );
         }
 
-        // =====================================================
+        // ==========================================================================
         // 4. Validate service
-        // =====================================================
+        // ==========================================================================
 
         ServiceOffering service =
                 serviceOfferingRepository
@@ -147,9 +150,9 @@ public class AppointmentAdminService {
                                 )
                         );
 
-        // =====================================================
+        // =============================================================================
         // 5. Validate doctor-service mapping
-        // =====================================================
+        // =============================================================================
 
         boolean doctorProvidesService =
                 doctorServiceRepository
@@ -164,13 +167,13 @@ public class AppointmentAdminService {
             );
         }
 
-        //=================check availability ===================
+        //============================= check availability ====================================
         List<LocalTime> slots = availabilityService.computeSlots(clinicId, doctor, service, request.appointmentDate());
         if (slots.isEmpty())
             throw new NotFoundException("Slot is not available");
-        // =====================================================
+        // ===============================================================================
         // 6. Validate time
-        // =====================================================
+        // ===============================================================================
 
         if (!request.startTime()
                 .isBefore(request.endTime())) {
@@ -180,9 +183,9 @@ public class AppointmentAdminService {
             );
         }
 
-        // =====================================================
+        // =====================================================================
         // 7. Validate service duration
-        // =====================================================
+        // =====================================================================
 
         LocalTime expectedEnd =
                 request.startTime()
@@ -197,9 +200,9 @@ public class AppointmentAdminService {
             );
         }
 
-        // =====================================================
+        // =========================================================================
         // 8. Check doctor slot conflict
-        // =====================================================
+        // =========================================================================
 
         boolean conflict =
                 appointmentRepository.existsConflict(
@@ -215,9 +218,9 @@ public class AppointmentAdminService {
             );
         }
 
-        // =====================================================
+        // ===========================================================================
         // 9. Create appointment
-        // =====================================================
+        // ===========================================================================
 
         Appointment appointment =
                 new Appointment();
@@ -254,9 +257,9 @@ public class AppointmentAdminService {
                 savedAppointment.getId()
         );
 
-        // =====================================================
+        // ============================================================================
         // 10. Create Appointment Payment
-        // =====================================================
+        // ============================================================================
 
         AppointmentPayment payment = new AppointmentPayment();
 
@@ -266,16 +269,22 @@ public class AppointmentAdminService {
         payment.setStatus(AppointmentPaymentStatus.UNPAID);
         appointmentPaymentRepository.save(payment);
 
-        // =====================================================
+        // =================================================================================
         // 11. Create booking notification
-        // =====================================================
-
-//         notificationService.createBookingConfirmation(
-//                 savedAppointment
-//         );
-
-        notificationSchedulingService.bookingNotification(savedAppointment);
-        notificationSchedulingService.scheduleBookingReminder(savedAppointment);
+        // =================================================================================
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            notificationSchedulingService.bookingNotification(savedAppointment);
+            notificationSchedulingService.scheduleBookingReminder(savedAppointment);
+        }
+        // =================================================================================
+        // 11. IN-APP notification
+        // =================================================================================
+        notificationService.createAppointmentNotifications(
+                clinic,appointment,
+                doctor.getId(),
+                patient.getName(),
+                doctor.getName()
+        );
 
         return toDto(savedAppointment);
     }
@@ -290,10 +299,12 @@ public class AppointmentAdminService {
                 "Creating next appointment. previousAppointmentId={}",
                 previousAppointmentId
         );
-
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(request.clinicId());
         //VALIDATE SUBSCRIPTION PLAN
         subscriptionFeatureService.validateFeature(
                 request.clinicId(),
+                subscription,
                 SubscriptionFeature.APPOINTMENTS
         );
 
@@ -484,13 +495,15 @@ public class AppointmentAdminService {
         // =====================================================
         // 11. Booking notification
         // =====================================================
-        Optional<Notification> notification =
-                notificationRepository.findByAppointmentIdAndTypeAndChannel(
-                        previousAppointment.getId(), NotificationType.REMINDER_24H, NotificationChannel.WHATSAPP);
-        notification.ifPresent(p-> {
-            p.setStatus(NotificationStatus.SENT);
-        });
-        notificationSchedulingService.bookingNotification(savedAppointment);
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            Optional<Notification> notification =
+                    notificationRepository.findByAppointmentIdAndTypeAndChannel(
+                            previousAppointment.getId(), NotificationType.REMINDER_24H, NotificationChannel.WHATSAPP);
+            notification.ifPresent(p -> {
+                p.setStatus(NotificationStatus.SENT);
+            });
+            notificationSchedulingService.bookingNotification(savedAppointment);
+        }
 
         return toDto(savedAppointment);
     }
@@ -558,9 +571,11 @@ public class AppointmentAdminService {
             throw new SlotUnavailableException(
                     "Only a CONFIRMED appointment can be cancelled (current status: " + appointment.getStatus() + ")");
         }
-
         appointment.setStatus(AppointmentStatus.CANCELLED);
-        notificationSchedulingService.cancelBookingNotification(appointment);
+        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(appointment.getClinic().getId());
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            notificationSchedulingService.cancelBookingNotification(appointment);
+        }
         return toDto(appointment);
     }
 
@@ -653,21 +668,14 @@ public class AppointmentAdminService {
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
-        // ---------------------------------------------
+        // ================================================================================
         // Notification
-        // ---------------------------------------------
-
-        // Create RESCHEDULED notification here.
-        //
-        // notificationService.createRescheduledNotification(
-        //         savedAppointment,
-        //         oldDate,
-        //         oldStart,
-        //         oldEnd
-        // );
-
-        notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
-        notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+        // ================================================================================
+        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(appointment.getClinic().getId());
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
+            notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
+        }
 
         return toDto(savedAppointment);
     }
@@ -773,18 +781,13 @@ public class AppointmentAdminService {
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
-        // ---------------------------------------------
+        //=================================================================================
         // Optional notification
-        // ---------------------------------------------
-
-//         notificationService.createFollowUpSuggestedNotification(
-//                 savedAppointment
-//         );
-
-        if (request.suggestedFollowUpDate() != null) {
+        //=================================================================================
+        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(appointment.getClinic().getId());
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
             notificationSchedulingService.scheduleFollowUpSuggestion(appointment, request.suggestedFollowUpDate());
         }
-
         return toDto(savedAppointment);
     }
 

@@ -10,6 +10,7 @@ import com.jfl.appointment.repository.*;
 import com.jfl.appointment.service.ClinicSubscriptionService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserManagementService {
@@ -35,10 +37,14 @@ public class UserManagementService {
     @Transactional
     public AppUser createUser(
             CreateUserRequest request) {
+       log.info("createUser request");
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(request.clinicId());
 
         if (!RoleName.CLINIC_ADMIN.equals(request.role())) {
             subscriptionFeatureService.validateFeature(
                     request.clinicId(),
+                    subscription,
                     SubscriptionFeature.STAFF
             );
         }

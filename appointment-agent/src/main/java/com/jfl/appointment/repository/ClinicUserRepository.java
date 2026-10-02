@@ -56,4 +56,33 @@ public interface ClinicUserRepository
             @Param("clinicId") Long clinicId,
             @Param("roleName") String roleName
     );
+
+
+    //==================================================================
+           //reciepient
+    //==================================================================
+    @Query(value = """
+        SELECT DISTINCT cu.user_id
+        FROM clinic_user cu
+        JOIN app_user au
+            ON au.id = cu.user_id
+        JOIN user_role ur
+            ON ur.user_id = au.id
+        JOIN role r
+            ON r.id = ur.role_id
+        WHERE cu.clinic_id = :clinicId
+          AND cu.active = true
+          AND au.enabled = true
+          AND (
+              r.name IN ('CLINIC_ADMIN', 'STAFF')
+              OR (
+                  r.name = 'DOCTOR'
+                  AND cu.doctor_id = :doctorId
+              )
+          )
+        """, nativeQuery = true)
+    List<Long> findAppointmentRecipients(
+            @Param("clinicId") Long clinicId,
+            @Param("doctorId") Long doctorId
+    );
 }
