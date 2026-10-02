@@ -225,4 +225,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );
+
+    @Query("""
+            SELECT a
+            FROM Appointment a
+            WHERE a.clinic.id = :clinicId
+              AND a.patient.id = :patientId
+              AND a.doctor.id = :doctorId
+            ORDER BY a.appointmentDate ASC, a.startTime ASC
+            """)
+    Page<Appointment> findPatientAppointmentsByDoctor(
+            @Param("clinicId") Long clinicId,
+            @Param("patientId") Long patientId,
+            @Param("doctorId") Long doctorId,
+            Pageable pageable
+    );
 }

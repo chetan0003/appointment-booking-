@@ -1,10 +1,12 @@
 package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
+import com.jfl.appointment.dashboard.service.ClinicAccessService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.DoctorDto;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.SecurityContextService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -15,10 +17,12 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.DayOfWeek;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -37,6 +41,8 @@ public class DoctorDashboardController {
     private final DoctorServiceRepository doctorServiceRepository;
     private final DoctorAvailabilityRepository doctorAvailabilityRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final SecurityContextService securityContextService;
+    private final ClinicAccessService clinicAccessService;
 
 
     @Transactional
@@ -272,45 +278,90 @@ public class DoctorDashboardController {
                 serviceId
         );
 
-        List<DoctorDto> doctors;
+        Collection<? extends GrantedAuthority> authorities = securityContextService.getCurrentUser().getAuthorities();
+        RoleName currentUserRole = authorities.stream().map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring(5))
+                .map(authority -> RoleName.valueOf(authority))
+                .findFirst()
+                .orElse(null);
 
-        if (serviceId == null) {
+        List<Doctor> doctorEntities;
 
-            doctors = doctorRepository
-                    .findByClinicId(clinicId)
-                    .stream()
-                    .map(d -> new DoctorDto(
-                            d.getId(),
-                            d.getName(),
-                            d.getSpecialization(),
-                            d.isActive()
-                    ))
-                    .toList();
+        switch (currentUserRole) {
 
-        } else {
+            case SUPER_ADMIN, CLINIC_ADMIN, STAFF -> {
 
-            doctors = doctorRepository
-                    .findDoctorsByClinicAndServiceForDashboard(
-                            clinicId,
-                            serviceId
-                    )
-                    .stream()
-                    .map(d -> new DoctorDto(
-                            d.getId(),
-                            d.getName(),
-                            d.getSpecialization(),
-                            d.isActive()
-                    ))
-                    .toList();
+                if (serviceId == null) {
+
+                    doctorEntities =
+                            doctorRepository.findByClinicId(clinicId);
+
+                } else {
+
+                    doctorEntities =
+                            doctorRepository
+                                    .findDoctorsByClinicAndServiceForDashboard(
+                                            clinicId,
+                                            serviceId
+                                    );
+                }
+            }
+
+            case DOCTOR -> {
+
+                ClinicUser clinicUser =
+                        clinicAccessService
+                                .getClinicUser(clinicId);
+
+                Long doctorId =
+                        clinicUser.getDoctor().getId();
+
+                if (serviceId == null) {
+
+                    doctorEntities = doctorRepository
+                            .findByClinicId(clinicId)
+                            .stream()
+                            .filter(doctor ->
+                                    doctor.getId().equals(doctorId)
+                            )
+                            .toList();
+
+                } else {
+
+                    doctorEntities = doctorRepository
+                            .findDoctorsByClinicAndServiceForDashboard(
+                                    clinicId,
+                                    serviceId
+                            )
+                            .stream()
+                            .filter(doctor ->
+                                    doctor.getId().equals(doctorId)
+                            )
+                            .toList();
+                }
+            }
+
+            default -> throw new SecurityException(
+                    "You are not authorized to view doctors."
+            );
         }
 
-        return ResponseEntity
-                .ok(
-                        ApiResponse.success(
-                                "Doctors fetched successfully.",
-                                doctors
-                        )
-                );
+        List<DoctorDto> doctors = doctorEntities.stream()
+                .map(d -> new DoctorDto(
+                        d.getId(),
+                        d.getName(),
+                        d.getSpecialization(),
+                        d.isActive()
+                ))
+                .toList();
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Doctors fetched successfully.",
+                        doctors
+                )
+        );
     }
 
     @Transactional

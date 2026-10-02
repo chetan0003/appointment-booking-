@@ -7,6 +7,7 @@ import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.PatientRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,11 +15,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 
 @Slf4j
@@ -29,6 +31,8 @@ public class PatientService {
     private final PatientRepository patientRepository;
     private final ClinicRepository clinicRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final SecurityContextService securityContextService;
+    private final ClinicAccessService clinicAccessService;
 
     @Transactional
     public PatientResponseDto createPatient(
@@ -190,22 +194,52 @@ public class PatientService {
             );
         }
 
-        Pageable pageable =
-                PageRequest.of(
-                        page,
-                        size,
-                        Sort.by(
-                                Sort.Direction.ASC,
-                                "name"
-                        )
-                );
+        Pageable pageable = PageRequest.of(
+                page,
+                size,
+                Sort.by(Sort.Direction.ASC, "name")
+        );
 
-        return patientRepository
-                .findByClinicId(
+        Collection<? extends GrantedAuthority> authorities = securityContextService.getCurrentUser().getAuthorities();
+        RoleName currentUserRole = authorities.stream().map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring(5))
+                .map(authority -> RoleName.valueOf(authority))
+                .findFirst()
+                .orElse(null);
+
+        Page<Patient> patients;
+
+        switch (currentUserRole) {
+
+            case CLINIC_ADMIN, STAFF -> patients =
+                    patientRepository.findByClinicId(
+                            clinicId,
+                            pageable
+                    );
+
+            case DOCTOR -> {
+
+                ClinicUser clinicUser =
+                        clinicAccessService
+                                .getClinicUser(clinicId);
+
+                Long doctorId =
+                        clinicUser.getDoctor().getId();
+
+                patients = patientRepository.findPatientsByDoctor(
                         clinicId,
+                        doctorId,
                         pageable
-                )
-                .map(this::toDto);
+                );
+            }
+
+            default -> throw new SecurityException(
+                    "You are not authorized to view patients."
+            );
+        }
+
+        return patients.map(this::toDto);
     }
 
     @Transactional(readOnly = true)

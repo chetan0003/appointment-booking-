@@ -282,4 +282,22 @@ public class GlobalExceptionHandler {
                         )
                 );
     }
+
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<ApiErrorResponse> handleSecurityError(
+            SecurityException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_ACCEPTABLE)
+                .body(
+                        new ApiErrorResponse(
+                                "NO ACCESS",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
 }

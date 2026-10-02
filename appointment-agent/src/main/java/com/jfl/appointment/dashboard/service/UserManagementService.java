@@ -6,16 +6,20 @@ import com.jfl.appointment.dashboard.dto.ClinicUserDto;
 import com.jfl.appointment.dashboard.dto.CreateUserRequest;
 import com.jfl.appointment.dashboard.dto.UserResponse;
 import com.jfl.appointment.entity.*;
+import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.SecurityContextService;
 import com.jfl.appointment.service.ClinicSubscriptionService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,26 +37,41 @@ public class UserManagementService {
     private final AppUserRepository appUserRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final ClinicSubscriptionService clinicSubscriptionService;
+    private final SecurityContextService securityContextService;
 
     @Transactional
     public AppUser createUser(
             CreateUserRequest request) {
        log.info("createUser request");
-        ClinicSubscription subscription =
-                subscriptionFeatureService.getActiveSubscription(request.clinicId());
 
-        if (!RoleName.CLINIC_ADMIN.equals(request.role())) {
-            subscriptionFeatureService.validateFeature(
-                    request.clinicId(),
-                    subscription,
-                    SubscriptionFeature.STAFF
-            );
+
+        Collection<? extends GrantedAuthority> authorities =
+                securityContextService.getCurrentUser().getAuthorities();
+
+        RoleName currentUserRole = authorities.stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring(5))
+                .map(authority -> RoleName.valueOf(authority))
+                .findFirst()
+                .orElse(null);
+
+        if (RoleName.CLINIC_ADMIN.equals(currentUserRole)) {
+            ClinicSubscription subscription =
+                    subscriptionFeatureService.getActiveSubscription(request.clinicId());
+            if (RoleName.STAFF.equals(request.role())) {
+                subscriptionFeatureService.validateFeature(
+                        request.clinicId(),
+                        subscription,
+                        SubscriptionFeature.STAFF
+                );
+            }
         }
 
         if (userRepository.existsByUsername(
                 request.username())) {
 
-            throw new IllegalArgumentException(
+            throw new ConflictException(
                     "Username already exists"
             );
         }

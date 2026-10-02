@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,10 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.TextStyle;
 import java.time.temporal.TemporalAdjusters;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -545,8 +543,8 @@ public class AppointmentAdminService {
                         clinicId,
                         from,
                         to,
-                        serviceId,
                         doctorId,
+                        serviceId,
                         status
                 );
 
@@ -798,21 +796,69 @@ public class AppointmentAdminService {
             int page,
             int size) {
 
+        if (page < 0) {
+            throw new IllegalArgumentException(
+                    "Page must be greater than or equal to 0."
+            );
+        }
+
+        if (size <= 0 || size > 100) {
+            throw new IllegalArgumentException(
+                    "Page size must be between 1 and 100."
+            );
+        }
+
         patientRepository.findByIdAndClinicId(patientId, clinicId)
                 .orElseThrow(() ->
-                        new NotFoundException("Patient not found for this clinic."));
-
-        Pageable pageable = PageRequest.of(
-                page,
-                size
-        );
-
-        Page<Appointment> appointments =
-                appointmentRepository.findByClinicIdAndPatientIdOrderByAppointmentDateAscStartTimeAsc(
-                        clinicId,
-                        patientId,
-                        pageable
+                        new NotFoundException(
+                                "Patient not found for this clinic."
+                        )
                 );
+
+        Pageable pageable = PageRequest.of(page, size);
+
+        Collection<? extends GrantedAuthority> authorities = securityContextService.getCurrentUser().getAuthorities();
+        RoleName currentUserRole = authorities.stream().map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority.startsWith("ROLE_"))
+                .map(authority -> authority.substring(5))
+                .map(authority -> RoleName.valueOf(authority))
+                .findFirst()
+                .orElse(null);
+
+        Page<Appointment> appointments;
+
+        switch (currentUserRole) {
+
+            case CLINIC_ADMIN, STAFF -> appointments =
+                    appointmentRepository
+                            .findByClinicIdAndPatientIdOrderByAppointmentDateAscStartTimeAsc(
+                                    clinicId,
+                                    patientId,
+                                    pageable
+                            );
+
+            case DOCTOR -> {
+
+                ClinicUser clinicUser =
+                        clinicAccessService
+                                .getClinicUser(clinicId);
+
+                Long doctorId =
+                        clinicUser.getDoctor().getId();
+
+                appointments =
+                        appointmentRepository.findPatientAppointmentsByDoctor(
+                                clinicId,
+                                patientId,
+                                doctorId,
+                                pageable
+                        );
+            }
+
+            default -> throw new SecurityException(
+                    "You are not authorized to view patient appointments."
+            );
+        }
 
         return appointments.map(this::toDto);
     }

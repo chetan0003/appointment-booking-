@@ -5,5 +5,6 @@ public enum PaymentMethod {
     UPI,
     CARD,
     BANK_TRANSFER,
-    ONLINE
+    ONLINE,
+    FREE
 }
