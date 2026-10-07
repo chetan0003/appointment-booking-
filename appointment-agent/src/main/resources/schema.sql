@@ -665,3 +665,12 @@ VALUES
     TRUE
 );
 
+CREATE TABLE IF NOT EXISTS clinic_queue_counter (
+    id BIGSERIAL PRIMARY KEY,
+    clinic_id BIGINT NOT NULL,
+    queue_date DATE NOT NULL,
+    last_number INTEGER NOT NULL DEFAULT 0,
+
+    CONSTRAINT uq_clinic_queue_counter
+        UNIQUE (clinic_id, queue_date)
+);

@@ -12,5 +12,6 @@ public record AppointmentResponse(
         LocalTime startTime,
         LocalTime endTime,
         String doctorName,
-        String serviceName
+        String serviceName,
+        String rawToken
 ) {}

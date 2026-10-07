@@ -68,4 +68,7 @@ public class Appointment extends AuditableEntity {
 
     @Column(name = "suggested_follow_up_date")
     private LocalDate suggestedFollowUpDate;
+
+    @Column(name = "whatsapp_number")
+    private String whatsappNumber;
 }

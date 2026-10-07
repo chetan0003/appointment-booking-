@@ -22,6 +22,7 @@ public class SecurityDataInitializer {
     private final AppUserRepository userRepository;
 
     private final PasswordEncoder passwordEncoder;
+    private final ConfigProperties configProperties;
 
     @Bean
     CommandLineRunner initSecurityData() {
@@ -43,7 +44,7 @@ public class SecurityDataInitializer {
             }
 
             if (!userRepository
-                    .existsByUsername("superadmin")) {
+                    .existsByUsername(configProperties.admin().username())) {
 
                 Role role =
                         roleRepository
@@ -54,17 +55,17 @@ public class SecurityDataInitializer {
 
                 AppUser user =
                         AppUser.builder()
-                                .username("superadmin")
+                                .username(configProperties.admin().username())
                                 .email(
-                                        "superadmin@example.com"
+                                        configProperties.admin().email()
                                 )
                                 .password(
                                         passwordEncoder.encode(
-                                                "ChangeMe@123"
+                                                configProperties.admin().password()
                                         )
                                 )
-                                .firstName("System")
-                                .lastName("Administrator")
+                                .firstName(configProperties.admin().firstName())
+                                .lastName(configProperties.admin().lastName())
                                 .enabled(true)
                                 .build();
 

@@ -126,7 +126,7 @@ public class SubscriptionPaymentService {
 
         if (pendingPaymentExists) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "A payment is already pending verification."
             );
         }
@@ -196,7 +196,7 @@ public class SubscriptionPaymentService {
         if (payment.getStatus()
                 != SubscriptionPaymentStatus.PENDING) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Payment has already been processed."
             );
         }
@@ -341,11 +341,14 @@ public class SubscriptionPaymentService {
 
         SubscriptionPlan plan =
                 subscription.getPlan();
-
+        Long createdBy = payment.getCreatedBy();
+        Optional<AppUser> byId = appUserRepository.findById(createdBy);
+        String submittedBy = byId.get().getFirstName() + " " + byId.get().getLastName();
         return new PaymentResponse(
                 payment.getId(),
                 subscription.getClinic().getId(),
                 subscription.getClinic().getName(),
+                submittedBy,
                 subscription.getId(),
                 plan.getId(),
                 plan.getName(),

@@ -55,7 +55,8 @@ public class ClinicSubscriptionController {
     @PreAuthorize("""
         hasAnyRole(
             'SUPER_ADMIN',
-            'CLINIC_ADMIN'
+            'CLINIC_ADMIN',
+            'DOCTOR'
         )
         """)
     public ResponseEntity<ApiResponse<List<PaymentResponse>>>

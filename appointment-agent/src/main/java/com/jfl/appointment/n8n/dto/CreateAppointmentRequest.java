@@ -22,5 +22,6 @@ public record CreateAppointmentRequest(
         String idempotencyKey,
         // Optional - if supplied, this conversation_session is marked BOOKED
         // on success, freeing the patient to start a new conversation.
-        Long sessionId
-) {}
+        Long sessionId,
+        String sessionCode
+        ) {}

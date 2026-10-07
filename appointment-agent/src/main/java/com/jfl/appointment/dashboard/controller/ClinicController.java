@@ -18,6 +18,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.DayOfWeek;
@@ -42,10 +43,10 @@ public class ClinicController {
     private final ClinicWorkingHoursRepository clinicWorkingHoursRepository;
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN'
-        )
-    """)
+                hasAnyRole(
+                    'SUPER_ADMIN'
+                )
+            """)
     @PostMapping
     public ResponseEntity<ApiResponse<ClinicResponse>> createClinic(
             @RequestBody CreateClinicRequest request) {
@@ -83,10 +84,10 @@ public class ClinicController {
 
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN'
-        )
-    """)
+                hasAnyRole(
+                    'SUPER_ADMIN'
+                )
+            """)
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ClinicResponse>> updateClinic(
             @PathVariable Long id,
@@ -98,7 +99,7 @@ public class ClinicController {
         // --------------------------------------------------
 
         ClinicResponse response =
-                clinicService.updateClinic(id,request);
+                clinicService.updateClinic(id, request);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
@@ -111,11 +112,11 @@ public class ClinicController {
     }
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<ClinicResponse>>> getAllClinic() {
 
@@ -133,11 +134,11 @@ public class ClinicController {
     }
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @PostMapping("/{clinicId}/working-hours")
     public ResponseEntity<ApiResponse<List<WorkingHourDto>>> createOrUpdateWorkingHours(
             @PathVariable Long clinicId,
@@ -254,12 +255,42 @@ public class ClinicController {
                 );
     }
 
+
+    @Transactional
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
+    @GetMapping("/{clinicId}/working-hours")
+    public ResponseEntity<List<WorkingHourDto>> getWorkingHours(
+            @PathVariable Long clinicId) {
+        List<WorkingHourDto> byClinicIdAndActiveTrue = clinicWorkingHoursRepository.findByClinic_IdAndActiveTrue(clinicId).stream()
+                .map(hour ->
+                    new WorkingHourDto(
+                            hour.getId(),
+                            null,
+                            hour.getDayOfWeek().name(),
+                            hour.getStartTime(),
+                            hour.getEndTime(),
+                            hour.getBreakStartTime(),
+                            hour.getBreakEndTime(),
+                            hour.isActive()
+                    )).toList();
+
+        return ResponseEntity.ok(
+                byClinicIdAndActiveTrue
+        );
+    }
+
+
+    @PreAuthorize("""
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @Cacheable(
             value = "clinicHolidays",
             key = "#clinicId"
@@ -274,7 +305,7 @@ public class ClinicController {
                                 clinicId
                         )
                         .stream()
-                        .filter(f-> month.equals(f.getHolidayDate().getMonth()))
+                        .filter(f -> month.equals(f.getHolidayDate().getMonth()))
                         .map(holiday -> new ClinicHolidayDto(
                                 holiday.getId(),
                                 holiday.getName(),
@@ -295,11 +326,11 @@ public class ClinicController {
     }
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
     @CacheEvict(
             value = "clinicHolidays",
             key = "#clinicId"
@@ -382,5 +413,59 @@ public class ClinicController {
                                 response
                         )
                 );
+    }
+
+    @PreAuthorize("""
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN'
+            )
+            """)
+    @CacheEvict(
+            value = "clinicHolidays",
+            key = "#clinicId"
+    )
+    @DeleteMapping("/{clinicId}/holidays/{holidayId}")
+    public ResponseEntity<ApiResponse<Void>> deleteClinicHoliday(
+            @PathVariable Long clinicId,
+            @PathVariable Long holidayId) {
+
+        log.info(
+                "Deleting clinic holiday. clinicId={}, holidayId={}",
+                clinicId,
+                holidayId
+        );
+
+        // --------------------------------------------------
+        // 1. Validate clinic
+        // --------------------------------------------------
+        if (!clinicRepository.existsById(clinicId)) {
+            throw new NotFoundException(
+                    "Clinic not found: " + clinicId
+            );
+        }
+
+        // --------------------------------------------------
+        // 2. Fetch holiday belonging to clinic
+        // --------------------------------------------------
+        ClinicHoliday holiday = clinicHolidayRepository
+                .findByIdAndClinicId(holidayId, clinicId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Clinic holiday not found: " + holidayId
+                        )
+                );
+
+        clinicHolidayRepository.delete(holiday);
+
+        // --------------------------------------------------
+        // 5. API response
+        // --------------------------------------------------
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Clinic holiday deleted successfully.",
+                        null
+                )
+        );
     }
 }

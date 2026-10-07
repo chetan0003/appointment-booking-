@@ -1,13 +1,17 @@
 package com.jfl.appointment.dashboard.service;
 
+import com.jfl.appointment.config.ConfigProperties;
 import com.jfl.appointment.dashboard.dto.*;
+import com.jfl.appointment.dto.AppointmentQrCredentialResult;
 import com.jfl.appointment.entity.*;
-import com.jfl.appointment.exception.NotFoundException;
-import com.jfl.appointment.exception.SlotUnavailableException;
+import com.jfl.appointment.exception.*;
 import com.jfl.appointment.n8n.service.AvailabilityService;
+import com.jfl.appointment.n8n.service.ConversationSessionService;
+import com.jfl.appointment.policy.service.AppointmentPolicyService;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.AppointmentQrService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,15 +19,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.*;
 import java.time.format.TextStyle;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -45,248 +49,436 @@ public class AppointmentAdminService {
     private final AvailabilityService availabilityService;
     private final NotificationSchedulingService notificationSchedulingService;
     private final NotificationRepository notificationRepository;
+    private final AppNotificationRepository appNotificationRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final AppointmentPaymentRepository appointmentPaymentRepository;
     private final NotificationService notificationService;
+    private final ConversationSessionRepository sessionRepository;
+    private final BookingAttemptRepository bookingAttemptRepository;
+    private final ConversationSessionService sessionService;
+    private final ConfigProperties configProperties;
+    private final ClinicQueueEntryRepository queueEntryRepository;
+    private final AppointmentPolicyService appointmentPolicyService;
+    private final AppointmentQrService appointmentQrService;
+    private final AppointmentQrCredentialRepository appointmentQrCredentialRepository;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
             Long clinicId,
             CreateAppointmentRequest request) {
 
+        final boolean isWhatsApp = isWhatsAppRequest(request);
+
         log.info(
-                "Creating normal appointment. clinicId={}, patientId={}, doctorId={}, serviceId={}",
-                clinicId,
+                "createAppointment source={}, clinicId={}, patientId={}, patientName={}, doctorId={}, date={} IdenpotentKey={}",
+                isWhatsApp ? "WHATSAPP" : "DASHBOARD",
+                clinicId != null ? clinicId : request.clinicId(),
                 request.patientId(),
+                request.patientName(),
                 request.doctorId(),
-                request.serviceId()
+                request.appointmentDate(),
+                request.idempotencyKey()
         );
+
+        Long resolvedClinicId = clinicId != null ? clinicId : request.clinicId();
+        if (resolvedClinicId == null) {
+            throw new IllegalArgumentException("clinicId is required.");
+        }
+
+        // -------------------------------------------------------------------------
+        // 0. Subscription
+        // -------------------------------------------------------------------------
         ClinicSubscription subscription =
-                subscriptionFeatureService.getActiveSubscription(clinicId);
-        //VALIDATE SUBSCRIPTION PLAN
-        subscriptionFeatureService.validateFeature(
-                clinicId,
-                subscription,
-                SubscriptionFeature.APPOINTMENTS
-        );
-        // Idempotency: if a request with this key already produced a booking, return it
-        // instead of creating a duplicate (handles WhatsApp/n8n webhook retries).
-        if (request.idempotencyKey() != null) {
+                subscriptionFeatureService.getActiveSubscription(resolvedClinicId);
+
+        if (isWhatsApp) {
+            subscriptionFeatureService.validateFeatureOnWhats(resolvedClinicId, subscription);
+        } else {
+            subscriptionFeatureService.validateFeature(
+                    resolvedClinicId, subscription, SubscriptionFeature.APPOINTMENTS);
+        }
+
+        // -------------------------------------------------------------------------
+        // 1. Idempotency (both channels) — FIRST
+        // -------------------------------------------------------------------------
+        if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
             Optional<Appointment> existing = appointmentRepository.findByAppointmentCode(
                     "IDEMP-" + request.idempotencyKey());
             if (existing.isPresent()) {
-                return toDto(existing.get());
+                log.info("Idempotent hit key={}", request.idempotencyKey());
+                return toDto(existing.get(), null, null);
             }
         }
-        // ==========================================================================
-        // 1. Validate clinic
-        // ==========================================================================
 
-        Clinic clinic = clinicRepository
-                .findById(clinicId)
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Clinic not found: " + clinicId
-                        )
-                );
+        // -------------------------------------------------------------------------
+        // 2. Clinic / doctor / service
+        // -------------------------------------------------------------------------
+        Clinic clinic = clinicRepository.findById(resolvedClinicId)
+                .orElseThrow(() -> new NotFoundException("Clinic not found: " + resolvedClinicId));
 
-        // ===============================================================================
-        // 2. Validate patient
-        // ===============================================================================
-
-        Patient patient = patientRepository
-                .findById(request.patientId())
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Patient not found: "
-                                        + request.patientId()
-                        )
-                );
-
-        if (!patient.getClinic().getId().equals(clinicId)) {
-            throw new IllegalArgumentException(
-                    "Patient does not belong to this clinic."
-            );
-        }
-
-        // =============================================================================
-        // 3. Validate doctor
-        // =============================================================================
-
-        Doctor doctor = doctorRepository
-                .findById(request.doctorId())
-                .filter(d ->
-                        d.getClinic().getId().equals(clinicId)
-                )
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Doctor not found: "
-                                        + request.doctorId()
-                        )
-                );
+        Doctor doctor = doctorRepository.findById(request.doctorId())
+                .filter(d -> d.getClinic().getId().equals(resolvedClinicId))
+                .orElseThrow(() -> new NotFoundException("Doctor not found: " + request.doctorId()));
 
         if (!doctor.isActive()) {
-            throw new IllegalArgumentException(
-                    "Doctor is not active."
+            throw new IllegalArgumentException("Doctor is not active.");
+        }
+
+        ServiceOffering service = serviceOfferingRepository
+                .findByIdAndClinicIdAndActiveTrue(request.serviceId(), resolvedClinicId)
+                .orElseThrow(() -> new NotFoundException(
+                        "Service not found or inactive: " + request.serviceId()));
+
+        if (!doctorServiceRepository.existsByDoctorIdAndServiceId(doctor.getId(), service.getId())) {
+            throw new IllegalArgumentException("Doctor does not provide the selected service.");
+        }
+
+        // -------------------------------------------------------------------------
+        // 3. WhatsApp-only: session code + spam limits
+        // -------------------------------------------------------------------------
+        ConversationSession session = null;
+        String whatsappNumber = null;
+
+        if (isWhatsApp) {
+            if (request.qrType() == null || request.qrType().isBlank()) {
+                throw new IllegalArgumentException("qrType is required for WhatsApp booking.");
+            }
+
+            whatsappNumber = firstNonBlank(request.whatsappNumber(), null);
+            session = validateWhatsAppSession(request, resolvedClinicId);
+            if (whatsappNumber == null && session != null) {
+                whatsappNumber = session.getWhatsappNumber();
+            }
+            if (whatsappNumber == null || whatsappNumber.isBlank()) {
+                throw new IllegalArgumentException("whatsappNumber is required for WhatsApp booking.");
+            }
+
+            // Record attempt + rate limit (5 / 10 min / phone+clinic)
+            recordBookingAttempt(resolvedClinicId, whatsappNumber, request.idempotencyKey());
+            assertAttemptRateLimit(resolvedClinicId, whatsappNumber);
+
+            // Daily success cap (3 / day / phone+clinic) — session-proof
+            assertDailySuccessLimit(resolvedClinicId, whatsappNumber);
+
+            // Same phone + same slot duplicate
+            assertNoDuplicatePhoneSlot(
+                    resolvedClinicId,
+                    whatsappNumber,
+                    request.appointmentDate(),
+                    request.startTime()
             );
         }
 
-        // ==========================================================================
-        // 4. Validate service
-        // ==========================================================================
+        // -------------------------------------------------------------------------
+        // 4. Lock doctor day + re-check slot (race-safe, both channels)
+        // -------------------------------------------------------------------------
+        appointmentRepository.lockDoctorAppointmentsForDate(doctor.getId(), request.appointmentDate());
 
-        ServiceOffering service =
-                serviceOfferingRepository
-                        .findByIdAndClinicIdAndActiveTrue(
-                                request.serviceId(),
-                                clinicId
-                        )
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Service not found or does not belong to clinic: "
-                                                + request.serviceId()
-                                )
-                        );
+        List<LocalTime> freshSlots = availabilityService.computeSlots(
+                clinic.getId(), doctor, service, request.appointmentDate());
 
-        // =============================================================================
-        // 5. Validate doctor-service mapping
-        // =============================================================================
-
-        boolean doctorProvidesService =
-                doctorServiceRepository
-                        .existsByDoctorIdAndServiceId(
-                                doctor.getId(),
-                                service.getId()
-                        );
-
-        if (!doctorProvidesService) {
-            throw new IllegalArgumentException(
-                    "Doctor does not provide the selected service."
-            );
-        }
-
-        //============================= check availability ====================================
-        List<LocalTime> slots = availabilityService.computeSlots(clinicId, doctor, service, request.appointmentDate());
-        if (slots.isEmpty())
-            throw new NotFoundException("Slot is not available");
-        // ===============================================================================
-        // 6. Validate time
-        // ===============================================================================
-
-        if (!request.startTime()
-                .isBefore(request.endTime())) {
-
-            throw new IllegalArgumentException(
-                    "Start time must be before end time."
-            );
-        }
-
-        // =====================================================================
-        // 7. Validate service duration
-        // =====================================================================
-
-        LocalTime expectedEnd =
-                request.startTime()
-                        .plusMinutes(
-                                service.getDurationMinutes()
-                        );
-
-        if (!expectedEnd.equals(request.endTime())) {
-
-            throw new IllegalArgumentException(
-                    "Appointment time does not match service duration."
-            );
-        }
-
-        // =========================================================================
-        // 8. Check doctor slot conflict
-        // =========================================================================
-
-        boolean conflict =
-                appointmentRepository.existsConflict(
-                        doctor.getId(),
-                        request.appointmentDate(),
-                        request.startTime(),
-                        request.endTime()
-                );
-
-        if (conflict) {
+        if (!freshSlots.contains(request.startTime())) {
             throw new SlotUnavailableException(
-                    "The selected appointment slot is not available."
-            );
+                    "Requested slot " + request.startTime() + " on " + request.appointmentDate()
+                            + " is no longer available for this doctor.");
         }
 
-        // ===========================================================================
-        // 9. Create appointment
-        // ===========================================================================
+        LocalTime endTime = request.startTime().plusMinutes(service.getDurationMinutes());
+        if (request.endTime() != null && !request.endTime().equals(endTime)) {
+            throw new IllegalArgumentException("Appointment time does not match service duration.");
+        }
 
-        Appointment appointment =
-                new Appointment();
+        boolean conflict = appointmentRepository.existsConflict(
+                doctor.getId(),
+                request.appointmentDate(),
+                request.startTime(),
+                endTime
+        );
+        if (conflict) {
+            throw new SlotUnavailableException("The selected appointment slot is not available.");
+        }
+
+        // -------------------------------------------------------------------------
+        // 5. Resolve patient
+        // -------------------------------------------------------------------------
+        Patient patient = resolvePatient(request, clinic, isWhatsApp);
+
+        //--------------------------------------------------------------------------
+        // 5.1 Appointment Policy Validation
+        // -------------------------------------------------------------------------
+
+//        LocalDateTime appointmentDateTime =
+//                request.appointmentDate().atTime(request.startTime());
+//
+//        int existingAppointmentsToday =
+//                appointmentRepository.countPatientAppointmentsForDate(
+//                        patient.getId(),
+//                        clinic.getId(),
+//                        request.appointmentDate(),
+//                        List.of(
+//                                AppointmentStatus.CONFIRMED
+//                        )
+//                );
+//
+//        appointmentPolicyService.validateCreateBooking(
+//                resolvedClinicId,
+//                appointmentDateTime,
+//                existingAppointmentsToday
+//        );
+
+        // -------------------------------------------------------------------------
+        // 6. Create appointment
+        // -------------------------------------------------------------------------
+        Appointment appointment = new Appointment();
+        appointment.setAppointmentCode(
+                IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
         appointment.setAmount(service.getPrice());
         appointment.setClinic(clinic);
-        appointment.setPatient(patient);
         appointment.setDoctor(doctor);
         appointment.setService(service);
-        appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
-        appointment.setAppointmentDate(
-                request.appointmentDate()
-        );
-
-        appointment.setStartTime(
-                request.startTime()
-        );
-
-        appointment.setEndTime(
-                request.endTime()
-        );
-
-        appointment.setStatus(
-                AppointmentStatus.CONFIRMED
-        );
-        appointment.setSource(PatientSource.DASHBOARD);
-        // Normal appointment
+        appointment.setPatient(patient);
+        appointment.setAppointmentDate(request.appointmentDate());
+        appointment.setStartTime(request.startTime());
+        appointment.setEndTime(endTime);
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+        appointment.setSource(isWhatsApp ? PatientSource.WHATSAPP : PatientSource.DASHBOARD);
         appointment.setFollowUpOfAppointment(null);
         appointment.setPaymentStatus(AppointmentPaymentStatus.UNPAID);
-        Appointment savedAppointment =
-                appointmentRepository.save(appointment);
+        if (whatsappNumber != null) {
+            appointment.setWhatsappNumber(whatsappNumber);
+        }
 
-        log.info(
-                "Appointment created successfully. appointmentId={}",
-                savedAppointment.getId()
-        );
+        Appointment saved = appointmentRepository.save(appointment);
+        // -------------------------------------------------------------------------
+        // 7. Create Appointment token
+        // -------------------------------------------------------------------------
+        String rawToken = null;
+        if (isWhatsApp) {
+            AppointmentQrCredentialResult qrCredential = appointmentQrService.createQrCredential(saved);
+            rawToken = qrCredential.token();
+        }
 
-        // ============================================================================
-        // 10. Create Appointment Payment
-        // ============================================================================
-
+        // -------------------------------------------------------------------------
+        // 7. Payment
+        // -------------------------------------------------------------------------
         AppointmentPayment payment = new AppointmentPayment();
-
-        payment.setAppointment(appointment);
+        payment.setAppointment(saved);
         payment.setTotalAmount(service.getPrice());
         payment.setPaidAmount(BigDecimal.ZERO);
         payment.setStatus(AppointmentPaymentStatus.UNPAID);
         appointmentPaymentRepository.save(payment);
 
-        // =================================================================================
-        // 11. Create booking notification
-        // =================================================================================
-        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
-            notificationSchedulingService.bookingNotification(savedAppointment);
-            notificationSchedulingService.scheduleBookingReminder(savedAppointment);
+        // -------------------------------------------------------------------------
+        // 8. Close WhatsApp session (1 booking / session + invalidate code)
+        // -------------------------------------------------------------------------
+        if (session != null) {
+            session.setState(ConversationState.BOOKED);
+            session.setSessionCode(null);
+            session.setCodeExpiresAt(null);
+            sessionRepository.save(session);
+        } else if (request.sessionId() != null) {
+            sessionService.markBooked(request.sessionId());
         }
-        // =================================================================================
-        // 11. IN-APP notification
-        // =================================================================================
+
+        // -------------------------------------------------------------------------
+        // 9. Notifications
+        // -------------------------------------------------------------------------
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
+            if (isWhatsApp) {
+                notificationSchedulingService.scheduleBookingReminder(saved);
+                // optional: notificationSchedulingService.bookingNotification(saved);
+            } else {
+                notificationSchedulingService.bookingNotification(saved);
+                notificationSchedulingService.scheduleBookingReminder(saved);
+            }
+        }
         notificationService.createAppointmentNotifications(
-                clinic,appointment,
+                clinic,
+                saved,
                 doctor.getId(),
                 patient.getName(),
-                doctor.getName()
+                doctor.getName(),
+                isWhatsApp
         );
 
-        return toDto(savedAppointment);
+        log.info("Appointment created id={} source={}", saved.getId(), appointment.getSource());
+        return toDto(saved, null, rawToken);
     }
 
+    private boolean isWhatsAppRequest(CreateAppointmentRequest request) {
+        if (request.sessionId() != null) return true;
+        if (request.qrType() != null && !request.qrType().isBlank()) return true;
+        if (request.source() != null && "WHATSAPP".equalsIgnoreCase(request.source())) return true;
+        return false;
+    }
+
+    private ConversationSession validateWhatsAppSession(
+            CreateAppointmentRequest request,
+            Long clinicId) {
+
+        if (request.sessionId() == null) {
+            // Allow without session only if you explicitly want; recommended: require for WA
+            throw new IllegalArgumentException("sessionId is required for WhatsApp booking.");
+        }
+
+        ConversationSession session = sessionRepository.findById(request.sessionId())
+                .orElseThrow(() -> new NotFoundException("Session not found: " + request.sessionId()));
+
+        if (session.getClinic() == null || !session.getClinic().getId().equals(clinicId)) {
+            throw new IllegalArgumentException("Session does not belong to this clinic.");
+        }
+        if (session.getState() == ConversationState.BOOKED
+                || session.getState() == ConversationState.ABANDONED) {
+            throw new IllegalStateException("Session is no longer active.");
+        }
+        if (request.sessionCode() == null || request.sessionCode().isBlank()) {
+            throw new ForbiddenException("sessionCode is required.");
+        }
+        if (session.getSessionCode() == null
+                || !session.getSessionCode().equalsIgnoreCase(request.sessionCode().trim())) {
+            throw new ForbiddenException("Invalid session code.");
+        }
+        if (session.getCodeExpiresAt() != null
+                && session.getCodeExpiresAt().isBefore(Instant.now())) {
+            throw new ForbiddenException("Session expired. Please scan the QR again.");
+        }
+        return session;
+    }
+
+    private Patient resolvePatient(
+            CreateAppointmentRequest request,
+            Clinic clinic,
+            boolean isWhatsApp) {
+
+        if (isWhatsApp) {
+            // PATIENT QR: prefer existing patientId
+            // CLINIC QR: patientId may be null → create from name (+ phone find-or-create later)
+            if (request.patientId() != null) {
+                return patientRepository.findById(request.patientId())
+                        .map(p -> {
+                            if (!p.getClinic().getId().equals(clinic.getId())) {
+                                throw new IllegalArgumentException("Patient does not belong to this clinic.");
+                            }
+                            return p;
+                        })
+                        .orElseGet(() -> createWhatsAppPatient(request, clinic));
+            }
+            if (request.patientName() == null || request.patientName().isBlank()) {
+                throw new IllegalArgumentException("patientName is required when patientId is null.");
+            }
+            return createWhatsAppPatient(request, clinic);
+        }
+
+        // Dashboard: patient must exist
+        if (request.patientId() == null) {
+            throw new IllegalArgumentException("patientId is required for dashboard booking.");
+        }
+        Patient patient = patientRepository.findById(request.patientId())
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + request.patientId()));
+        if (!patient.getClinic().getId().equals(clinic.getId())) {
+            throw new IllegalArgumentException("Patient does not belong to this clinic.");
+        }
+        return patient;
+    }
+
+    private void assertAttemptRateLimit(Long clinicId, String whatsappNumber) {
+        Instant since = Instant.now().minus(10, ChronoUnit.MINUTES);
+        long attempts = bookingAttemptRepository
+                .countByWhatsappNumberAndClinicIdAndCreatedAtAfter(whatsappNumber, clinicId, since);
+        if (attempts > configProperties.booking().maxAttemptsPerPhonePer10Min()) { // 5
+            throw new TooManyRequestsException(
+                    "Too many booking attempts. Please try again after a few minutes.");
+        }
+    }
+
+    private void assertDailySuccessLimit(Long clinicId, String whatsappNumber) {
+        ZoneId zone = ZoneId.of("Asia/Kolkata");
+        LocalDate today = LocalDate.now(zone);
+
+        LocalDateTime startOfDay = today.atStartOfDay();                 // 00:00:00
+        LocalDateTime endOfDay = today.plusDays(1).atStartOfDay();       // next day 00:00:00
+
+        long successToday = appointmentRepository.countSuccessfulCreatedToday(
+                whatsappNumber,
+                clinicId,
+                startOfDay,
+                endOfDay,
+                List.of(
+                        AppointmentStatus.CONFIRMED,
+                        AppointmentStatus.COMPLETED,
+                        AppointmentStatus.CANCELLED
+                )
+        );
+
+        int max = configProperties.booking().maxSuccessPerPhonePerClinicPerDay(); // 3
+        if (successToday >= max) {
+            throw new DailyBookingLimitException(
+                    "Daily booking limit reached for this number at this clinic.");
+        }
+    }
+
+    private void assertNoDuplicatePhoneSlot(
+            Long clinicId,
+            String whatsappNumber,
+            LocalDate date,
+            LocalTime startTime) {
+
+        boolean exists = appointmentRepository
+                .existsByWhatsappNumberAndClinic_IdAndAppointmentDateAndStartTimeAndStatusIn(
+                        whatsappNumber,
+                        clinicId,
+                        date,
+                        startTime,
+                        List.of(AppointmentStatus.CONFIRMED)
+                );
+
+        if (exists) {
+            throw new SlotUnavailableException(
+                    "An appointment already exists for this number at the same time.");
+        }
+    }
+
+    private void recordBookingAttempt(
+            Long clinicId,
+            String whatsappNumber,
+            String idempotencyKey) {
+
+        if (whatsappNumber == null || whatsappNumber.isBlank()) {
+            return;
+        }
+
+        BookingAttempt attempt = new BookingAttempt();
+        attempt.setClinicId(clinicId);
+        attempt.setWhatsappNumber(whatsappNumber.trim());
+        attempt.setIdempotencyKey(
+                idempotencyKey != null && !idempotencyKey.isBlank()
+                        ? idempotencyKey.trim()
+                        : null);
+        attempt.setCreatedAt(Instant.now());
+
+        bookingAttemptRepository.save(attempt);
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) return a.trim();
+        if (b != null && !b.isBlank()) return b.trim();
+        return null;
+    }
+
+    private Patient createWhatsAppPatient(
+            com.jfl.appointment.dashboard.dto.CreateAppointmentRequest request,
+            Clinic clinic) {
+
+        Patient patient = new Patient();
+
+        patient.setClinic(clinic);
+        patient.setName(request.patientName());
+        patient.setWhatsappNumber(request.whatsappNumber());
+        patient.setSource(PatientSource.WHATSAPP);
+        patient.setProfileStatus(PatientProfileStatus.INCOMPLETE);
+
+        return patientRepository.save(patient);
+    }
 
     @Transactional
     public AppointmentListItemDto createNextAppointment(
@@ -503,11 +695,22 @@ public class AppointmentAdminService {
             notificationSchedulingService.bookingNotification(savedAppointment);
         }
 
-        return toDto(savedAppointment);
+        // =================================================================================
+        // 11. IN-APP notification
+        // =================================================================================
+        notificationService.createAppointmentNotifications(
+                clinic, nextAppointment,
+                doctor.getId(),
+                patient.getName(),
+                doctor.getName(),
+                false
+        );
+
+        return toDto(savedAppointment, null, null);
     }
 
     @Transactional(readOnly = true)
-    public Page<AppointmentListItemDto> listAppointments(Long clinicId, LocalDate from, LocalDate to,
+    public Page<AppointmentListItemDto> listAppointments(Long clinicId, Long appointmentId, LocalDate from, LocalDate to,
                                                          Long doctorId, AppointmentStatus status,
                                                          Long serviceId, Pageable pageable) {
 
@@ -541,6 +744,7 @@ public class AppointmentAdminService {
         Specification<Appointment> specification =
                 AppointmentSpecification.forDashboard(
                         clinicId,
+                        appointmentId,
                         from,
                         to,
                         doctorId,
@@ -550,7 +754,8 @@ public class AppointmentAdminService {
 
         return appointmentRepository
                 .findAll(specification, pageable)
-                .map(this::toDto);
+                .map(m -> this.toDto(m, queueEntryRepository.findByAppointment_Id(m.getId())
+                        .orElse(null), null));
     }
 
 
@@ -574,7 +779,16 @@ public class AppointmentAdminService {
         if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
             notificationSchedulingService.cancelBookingNotification(appointment);
         }
-        return toDto(appointment);
+        // =================================================================================
+        // 11. IN-APP notification
+        // =================================================================================
+        notificationService.cancelledAppointmentNotifications(
+                appointment.getClinic(), appointment,
+                appointment.getDoctor().getId(),
+                appointment.getPatient().getName(),
+                appointment.getDoctor().getName()
+        );
+        return toDto(appointment, null, null);
     }
 
     @Transactional
@@ -674,11 +888,19 @@ public class AppointmentAdminService {
             notificationSchedulingService.rescheduleBookingReminder(savedAppointment);
             notificationSchedulingService.scheduleRescheduledNotice(savedAppointment);
         }
-
-        return toDto(savedAppointment);
+        // =================================================================================
+        // 11. IN-APP notification
+        // =================================================================================
+        notificationService.rescheduleAppointmentNotifications(
+                appointment.getClinic(), appointment,
+                appointment.getDoctor().getId(),
+                appointment.getPatient().getName(),
+                appointment.getDoctor().getName()
+        );
+        return toDto(savedAppointment, null, null);
     }
 
-    private AppointmentListItemDto toDto(Appointment a) {
+    private AppointmentListItemDto toDto(Appointment a, ClinicQueueEntry queueEntry, String rewToken) {
         return new AppointmentListItemDto(
                 a.getId(),
                 a.getAppointmentCode(),
@@ -690,13 +912,21 @@ public class AppointmentAdminService {
                 a.getStatus(),
                 a.getSource() != null ? a.getSource().name() : null,
                 a.getDoctor().getId(),
+                a.getClinic().getName(),
                 a.getDoctor().getName(),
                 a.getService().getId(),
                 a.getService().getName(),
                 a.getPatient().getName(),
                 a.getPatient().getWhatsappNumber(),
                 a.getFollowUpOfAppointment() != null ? a.getFollowUpOfAppointment().getId() : null,
-                a.getSuggestedFollowUpDate()
+                a.getSuggestedFollowUpDate(),
+                queueEntry != null ? queueEntry.getId() : null,
+                queueEntry != null ? queueEntry.getQueueToken() : null,
+                queueEntry != null ? queueEntry.getQueueNumber() : null,
+                queueEntry != null ? queueEntry.getQueueDate() : null,
+                queueEntry != null ? queueEntry.getQueueStatus() : null,
+                rewToken
+
         );
     }
 
@@ -733,31 +963,24 @@ public class AppointmentAdminService {
             Long appointmentId,
             FollowUpRequest request) {
 
-        Appointment appointment =
-                appointmentRepository.findById(appointmentId)
-                        .orElseThrow(() ->
-                                new NotFoundException(
-                                        "Appointment not found: "
-                                                + appointmentId
-                                )
-                        );
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Appointment not found: " + appointmentId
+                        )
+                );
 
-        // ---------------------------------------------
-        // Follow-up should normally be added after
-        // consultation is completed
-        // ---------------------------------------------
-
-        if (appointment.getStatus()
-                != AppointmentStatus.IN_CONSULTATION) {
-
+        if (appointment.getStatus() != AppointmentStatus.IN_CONSULTATION) {
             throw new IllegalArgumentException(
-                    "Follow-up can only be suggested for a completed appointment."
+                    "Follow-up can only be suggested during consultation."
             );
         }
 
-        // ---------------------------------------------
-        // Validate follow-up date
-        // ---------------------------------------------
+        if (request.suggestedFollowUpDate() == null) {
+            throw new IllegalArgumentException(
+                    "Follow-up date is required."
+            );
+        }
 
         if (request.suggestedFollowUpDate()
                 .isBefore(appointment.getAppointmentDate())) {
@@ -767,26 +990,41 @@ public class AppointmentAdminService {
             );
         }
 
-        // ---------------------------------------------
-        // Save suggested follow-up date
-        // ---------------------------------------------
-
+        // Save follow-up date
         appointment.setSuggestedFollowUpDate(
                 request.suggestedFollowUpDate()
         );
-        //added by me
+
+        // Complete appointment
         appointment.setStatus(AppointmentStatus.COMPLETED);
+
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
-        //=================================================================================
-        // Optional notification
-        //=================================================================================
-        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(appointment.getClinic().getId());
-        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
-            notificationSchedulingService.scheduleFollowUpSuggestion(appointment, request.suggestedFollowUpDate());
+        // Update queue entry
+        final ClinicQueueEntry[] save = {null};
+        queueEntryRepository.findByAppointment_Id(appointmentId)
+                .ifPresent(queueEntry -> {
+                    queueEntry.setQueueStatus(QueueStatus.COMPLETED);
+                    save[0] = queueEntryRepository.save(queueEntry);
+                });
+
+        // Optional WhatsApp follow-up notification
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(
+                        appointment.getClinic().getId()
+                );
+
+        if (subscriptionFeatureService.isWhatsAppNotificationEnable(
+                subscription.getPlan())) {
+
+            notificationSchedulingService.scheduleFollowUpSuggestion(
+                    savedAppointment,
+                    request.suggestedFollowUpDate()
+            );
         }
-        return toDto(savedAppointment);
+
+        return toDto(savedAppointment, save[0], null);
     }
 
     @Transactional(readOnly = true)
@@ -860,7 +1098,7 @@ public class AppointmentAdminService {
             );
         }
 
-        return appointments.map(this::toDto);
+        return appointments.map(o -> this.toDto(o, null, null));
     }
 
     @Transactional(readOnly = true)
@@ -918,4 +1156,26 @@ public class AppointmentAdminService {
                 .toList();
     }
 
+    @Transactional
+    @Modifying
+    public void deleteAppointment(
+            Long clinicId,
+            Long appointmentId) {
+        log.info("deleteAppointment method started ");
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() ->
+                        new NotFoundException(
+                                "Appointment not found: " + appointmentId
+                        )
+                );
+
+        notificationRepository.deleteAll(notificationRepository.findByAppointmentIdOrderByCreatedAtDesc(appointmentId));
+        appNotificationRepository.deleteAll(appNotificationRepository.findByAppointmentIdAndClinicId(appointmentId, clinicId));
+        appointmentPaymentRepository.findByAppointmentId(appointmentId).ifPresent(appointmentPaymentRepository::delete);
+        queueEntryRepository.findByAppointment_Id(appointmentId).ifPresent(queueEntryRepository::delete);
+        appointmentQrCredentialRepository.findByAppointmentId(appointmentId).ifPresent(appointmentQrCredentialRepository::delete);
+
+        appointmentRepository.delete(appointment);
+        log.info("Appointment deleted successfully");
+    }
 }

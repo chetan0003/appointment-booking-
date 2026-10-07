@@ -1,5 +1,6 @@
 package com.jfl.appointment.dashboard.service;
 
+import com.jfl.appointment.dashboard.dto.CreateAppointmentRequest;
 import com.jfl.appointment.dashboard.dto.CreatePatientRequest;
 import com.jfl.appointment.dashboard.dto.PatientResponseDto;
 import com.jfl.appointment.dashboard.dto.UpdatePatientRequest;
@@ -208,12 +209,12 @@ public class PatientService {
                 .findFirst()
                 .orElse(null);
 
-        Page<Patient> patients;
+        Page<Patient> patients = null;
 
         switch (currentUserRole) {
 
-            case CLINIC_ADMIN, STAFF -> patients =
-                    patientRepository.findByClinicId(
+            case SUPER_ADMIN, CLINIC_ADMIN, STAFF -> patients =
+                     patientRepository.findByClinicId(
                             clinicId,
                             pageable
                     );
@@ -303,5 +304,20 @@ public class PatientService {
                 && !patient.getEmail().isBlank()
                 && patient.getDateOfBirth() != null
                 && patient.getGender() != null;
+    }
+
+    private Patient createWhatsAppPatient(
+            CreateAppointmentRequest request,
+            Clinic clinic) {
+
+        Patient patient = new Patient();
+
+        patient.setClinic(clinic);
+        patient.setName(request.patientName());
+        patient.setWhatsappNumber(request.whatsappNumber());
+        patient.setSource(PatientSource.WHATSAPP);
+        patient.setProfileStatus(PatientProfileStatus.INCOMPLETE);
+
+        return patientRepository.save(patient);
     }
 }

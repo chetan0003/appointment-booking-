@@ -1,5 +1,7 @@
 package com.jfl.appointment.n8n.service;
 
+import com.jfl.appointment.dashboard.dto.AppointmentListItemDto;
+import com.jfl.appointment.dashboard.service.AppointmentAdminService;
 import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
 import com.jfl.appointment.dashboard.service.NotificationService;
 import com.jfl.appointment.entity.*;
@@ -27,17 +29,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class AppointmentService {
 
-    private final AppointmentRepository appointmentRepository;
-    private final PatientRepository patientRepository;
-    private final DoctorRepository doctorRepository;
-    private final ServiceOfferingRepository serviceRepository;
-    private final ClinicRepository clinicRepository;
-    private final AvailabilityService availabilityService;
-    private final ConversationSessionService sessionService;
-    private final NotificationSchedulingService notificationSchedulingService;
-    private final SubscriptionFeatureService subscriptionFeatureService;
-    private final AppointmentPaymentRepository appointmentPaymentRepository;
-    private final NotificationService notificationService;
+
+    private final AppointmentAdminService appointmentAdminService;
 
     /**
      * Runs in its own REQUIRES_NEW transaction so the pessimistic lock is
@@ -57,138 +50,43 @@ public class AppointmentService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public AppointmentResponse createAppointment(CreateAppointmentRequest request) {
         log.info("createAppointment: {},{},{}",request.clinicId(), request.patientName(),request.appointmentDate());
-        ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(request.clinicId());
-        //VALIDATE SUBSCRIPTION PLAN
-        subscriptionFeatureService.validateFeatureOnWhats(
-                request.clinicId(),
-                subscription
-        );
-
-        if (request.qrType().isBlank())
-            new NotFoundException("QRType param is missing: " + request.clinicId());
-        Clinic clinic = clinicRepository.findById(request.clinicId())
-                .orElseThrow(() -> new NotFoundException("Clinic not found: " + request.clinicId()));
-
-        Doctor doctor = doctorRepository.findById(request.doctorId())
-                .orElseThrow(() -> new NotFoundException("Doctor not found: " + request.doctorId()));
-
-        ServiceOffering service = serviceRepository.findById(request.serviceId())
-                .orElseThrow(() -> new NotFoundException("Service not found: " + request.serviceId()));
-
-        // Idempotency: if a request with this key already produced a booking, return it
-        // instead of creating a duplicate (handles WhatsApp/n8n webhook retries).
-        if (request.idempotencyKey() != null) {
-            Optional<Appointment> existing = appointmentRepository.findByAppointmentCode(
-                    "IDEMP-" + request.idempotencyKey());
-            if (existing.isPresent()) {
-                return toResponse(existing.get());
-            }
-        }
-
-        // Step 1: acquire the lock BEFORE re-checking availability.
-        appointmentRepository.lockDoctorAppointmentsForDate(doctor.getId(), request.appointmentDate());
-
-        // Step 2: authoritative re-check, now that we hold the lock.
-        List<LocalTime> freshSlots = availabilityService.computeSlots(
-                clinic.getId(), doctor, service, request.appointmentDate());
-
-        if (!freshSlots.contains(request.startTime())) {
-            throw new SlotUnavailableException(
-                    "Requested slot " + request.startTime() + " on " + request.appointmentDate()
-                            + " is no longer available for this doctor.");
-        }
-
-        Patient patient = null;
-
-        if (Constants.QR_CODE_TYPE.equalsIgnoreCase(request.qrType())) {
-            // QR flow
-            if (request.patientId() != null) {
-                patient = patientRepository.findById(request.patientId())
-                        .orElseGet(() -> createWhatsAppPatient(request, clinic));
-            } else {
-                patient = createWhatsAppPatient(request, clinic);
-            }
-        } else {
-            // Normal flow - patient must already exist
-            patient = patientRepository.findById(request.patientId())
-                    .orElseThrow(() ->
-                            new NotFoundException(
-                                    "Patient not found: " + request.patientId()
-                            ));
-        }
-
-
-        Appointment appointment = new Appointment();
-        appointment.setAppointmentCode(IntegrationUtil.generateAppointmentCode(request.idempotencyKey()));
-        appointment.setClinic(clinic);
-        appointment.setDoctor(doctor);
-        appointment.setService(service);
-        appointment.setPatient(patient);
-        appointment.setAppointmentDate(request.appointmentDate());
-        appointment.setStartTime(request.startTime());
-        appointment.setEndTime(request.startTime().plusMinutes(service.getDurationMinutes()));
-        appointment.setSource(PatientSource.WHATSAPP);
-        appointment.setStatus(AppointmentStatus.CONFIRMED);
-
-        // Step 4: insert. uq_doctor_slot_active (partial unique index) is the
-        // final DB-level guarantee even if steps 1-3 were somehow raced.
-        Appointment saved = appointmentRepository.save(appointment);
-
-        if (request.sessionId() != null) {
-            sessionService.markBooked(request.sessionId());
-        }
-        // =====================================================
-        // 10. Create Appointment Payment
-        // =====================================================
-
-        AppointmentPayment payment = new AppointmentPayment();
-
-        payment.setAppointment(appointment);
-        payment.setTotalAmount(service.getPrice());
-        payment.setPaidAmount(BigDecimal.ZERO);
-        payment.setStatus(AppointmentPaymentStatus.UNPAID);
-        appointmentPaymentRepository.save(payment);
-
-        //notification
-        if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
-            notificationSchedulingService.scheduleBookingReminder(saved);
-        }
-        // =================================================================================
-        // 11. IN-APP notification
-        // =================================================================================
-        notificationService.createAppointmentNotifications(
-                clinic,appointment,
-                doctor.getId(),
-                patient.getName(),
-                doctor.getName()
-        );
-        return toResponse(saved);
+        log.info("Session Code :: {} , Session Id :: {}", request.sessionCode(), request.sessionId());
+        com.jfl.appointment.dashboard.dto.CreateAppointmentRequest createAppointmentRequest = convertDashboardAppointmentReq(request);
+        AppointmentListItemDto appointment = appointmentAdminService.createAppointment(request.clinicId(), createAppointmentRequest);
+        return toResponse(appointment);
     }
 
-    private Patient createWhatsAppPatient(
-            CreateAppointmentRequest request,
-            Clinic clinic) {
-
-        Patient patient = new Patient();
-
-        patient.setClinic(clinic);
-        patient.setName(request.patientName());
-        patient.setWhatsappNumber(request.whatsappNumber());
-        patient.setSource(PatientSource.WHATSAPP);
-        patient.setProfileStatus(PatientProfileStatus.INCOMPLETE);
-
-        return patientRepository.save(patient);
+    public com.jfl.appointment.dashboard.dto.CreateAppointmentRequest convertDashboardAppointmentReq(com.jfl.appointment.n8n.dto.CreateAppointmentRequest newSource) {
+        return new com.jfl.appointment.dashboard.dto.CreateAppointmentRequest(
+                newSource.clinicId(),
+                newSource.patientId(),
+                newSource.doctorId(),
+                newSource.serviceId(),
+                newSource.patientName(),
+                newSource.qrType(),
+                newSource.whatsappNumber(),
+                newSource.appointmentDate(),
+                newSource.startTime(),
+                null,
+                newSource.idempotencyKey(),
+                newSource.sessionId(),
+                newSource.sessionCode(),
+                null,
+                PatientSource.WHATSAPP.name()
+        );
     }
 
-    private AppointmentResponse toResponse(Appointment a) {
+
+    private AppointmentResponse toResponse(AppointmentListItemDto a) {
         return new AppointmentResponse(
-                a.getAppointmentCode(),
-                a.getStatus(),
-                a.getAppointmentDate(),
-                a.getStartTime(),
-                a.getEndTime(),
-                a.getDoctor().getName(),
-                a.getService().getName()
+                a.appointmentCode(),
+                a.status(),
+                a.appointmentDate(),
+                a.startTime(),
+                a.endTime(),
+                a.doctorName(),
+                a.serviceName(),
+                a.rawToken()
         );
     }
 }

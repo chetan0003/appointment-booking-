@@ -8,6 +8,7 @@ import com.jfl.appointment.repository.AppUserRepository;
 import com.jfl.appointment.repository.ClinicUserRepository;
 import com.jfl.appointment.security.SecurityContextService;
 
+import com.jfl.appointment.util.Constants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,12 +30,85 @@ public class NotificationService {
     private final SecurityContextService securityContextService;
     private final AppUserRepository appUserRepository;
 
-    // =========================================================
+
+
+        // =========================================================
     // CREATE APPOINTMENT NOTIFICATIONS
     // =========================================================
 
     @Transactional
     public void createAppointmentNotifications(
+            Clinic clinic,
+            Appointment appointment,
+            Long doctorId,
+            String patientName,
+            String doctorName,
+            boolean isWhatsApp
+    ) {
+
+        List<Long> recipientIds =
+                recipientRepository.findAppointmentRecipients(
+                        clinic.getId(),
+                        doctorId
+                );
+
+        if (recipientIds == null || recipientIds.isEmpty()) {
+            log.info(
+                    "No notification recipients found for clinicId: {}",
+                    clinic.getId()
+            );
+            return;
+        }
+        String source = isWhatsApp ? PatientSource.WHATSAPP.name() : PatientSource.DASHBOARD.name();
+        String title = "New Appointment("+source+")";
+
+        String message = "New appointment booked for "
+                + patientName
+                + " with Dr. "
+                + doctorName;
+
+        List<AppNotification> notifications = recipientIds.stream()
+                .distinct()
+                .map(userId -> {
+
+                    AppUser recipient = appUserRepository
+                            .findById(
+                                    userId
+                            )
+                            .orElseThrow(() ->
+                                    new NotFoundException(
+                                            "Recipient not found for userId: "
+                                                    + userId
+                                    )
+                            );
+
+                    AppNotification notification = new AppNotification();
+
+                    notification.setClinic(clinic);
+                    notification.setRecipient(recipient);
+                    notification.setAppointment(appointment);
+                    notification.setType(
+                            AppNotificationType.APPOINTMENT_CREATED
+                    );
+                    notification.setTitle(title);
+                    notification.setMessage(message);
+                    notification.setRead(false);
+
+                    return notification;
+                })
+                .toList();
+
+        notificationRepository.saveAll(notifications);
+
+        log.info(
+                "Created {} appointment notifications for appointmentId: {}",
+                notifications.size(),
+                appointment.getId()
+        );
+    }
+
+    @Transactional
+    public void rescheduleAppointmentNotifications(
             Clinic clinic,
             Appointment appointment,
             Long doctorId,
@@ -56,9 +130,79 @@ public class NotificationService {
             return;
         }
 
-        String title = "New Appointment";
+        String title = "Rescheduled Appointment";
 
-        String message = "New appointment booked for "
+        String message = "Rescheduled appointment for "
+                + patientName
+                + " with Dr. "
+                + doctorName;
+
+        List<AppNotification> notifications = recipientIds.stream()
+                .distinct()
+                .map(userId -> {
+
+                    AppUser recipient = appUserRepository
+                            .findById(
+                                    userId
+                            )
+                            .orElseThrow(() ->
+                                    new NotFoundException(
+                                            "Recipient not found for userId: "
+                                                    + userId
+                                    )
+                            );
+
+                    AppNotification notification = new AppNotification();
+
+                    notification.setClinic(clinic);
+                    notification.setRecipient(recipient);
+                    notification.setAppointment(appointment);
+                    notification.setType(
+                            AppNotificationType.APPOINTMENT_CREATED
+                    );
+                    notification.setTitle(title);
+                    notification.setMessage(message);
+                    notification.setRead(false);
+
+                    return notification;
+                })
+                .toList();
+
+        notificationRepository.saveAll(notifications);
+
+        log.info(
+                "Created {} appointment notifications for appointmentId: {}",
+                notifications.size(),
+                appointment.getId()
+        );
+    }
+
+    @Transactional
+    public void cancelledAppointmentNotifications(
+            Clinic clinic,
+            Appointment appointment,
+            Long doctorId,
+            String patientName,
+            String doctorName
+    ) {
+
+        List<Long> recipientIds =
+                recipientRepository.findAppointmentRecipients(
+                        clinic.getId(),
+                        doctorId
+                );
+
+        if (recipientIds == null || recipientIds.isEmpty()) {
+            log.info(
+                    "No notification recipients found for clinicId: {}",
+                    clinic.getId()
+            );
+            return;
+        }
+
+        String title = "Cancelled Appointment";
+
+        String message = "Cancelled appointment for "
                 + patientName
                 + " with Dr. "
                 + doctorName;

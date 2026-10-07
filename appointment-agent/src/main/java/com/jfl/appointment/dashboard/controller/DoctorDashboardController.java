@@ -28,6 +28,8 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.jfl.appointment.util.Constants.DR_PREFIX;
+
 @RestController
 @Slf4j
 @RequestMapping("/api/dashboard/clinics/{clinicId}/doctors")
@@ -110,8 +112,7 @@ public class DoctorDashboardController {
         // 3. Create doctor
         // --------------------------------------------------
         Doctor doctor = new Doctor();
-
-        doctor.setName(request.name());
+        doctor.setName(DR_PREFIX+request.name());
         doctor.setSpecialization(request.specialization());
         doctor.setClinic(clinic);
         doctor.setActive(true);

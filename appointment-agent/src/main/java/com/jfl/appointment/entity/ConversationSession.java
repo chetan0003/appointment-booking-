@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -55,6 +56,12 @@ public class ConversationSession {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    @Column(name = "session_code", length = 16)
+    private String sessionCode;
+
+    @Column(name = "code_expires_at")
+    private Instant codeExpiresAt;
 
     @PrePersist
     protected void onCreate() {

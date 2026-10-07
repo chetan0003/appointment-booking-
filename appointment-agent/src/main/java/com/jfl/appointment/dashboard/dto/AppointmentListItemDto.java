@@ -2,6 +2,7 @@ package com.jfl.appointment.dashboard.dto;
 
 import com.jfl.appointment.entity.AppointmentPaymentStatus;
 import com.jfl.appointment.entity.AppointmentStatus;
+import com.jfl.appointment.entity.QueueStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -18,11 +19,19 @@ public record AppointmentListItemDto(
         AppointmentStatus status,
         String source,
         Long doctorId,
+        String clinicName,
         String doctorName,
         Long serviceId,
         String serviceName,
         String patientName,
         String patientPhone,
         Long followUpAppointmentId,
-        LocalDate suggestedFollowUpDate
+        LocalDate suggestedFollowUpDate,
+        Long queueEntryId,
+        String queueToken,
+        Integer queueNumber,
+        LocalDate queueDate,
+        QueueStatus queueStatus,
+        String rawToken
+
 ) {}

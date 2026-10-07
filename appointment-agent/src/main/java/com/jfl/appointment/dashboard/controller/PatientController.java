@@ -63,9 +63,9 @@ public class PatientController {
 
     @PreAuthorize("""
         hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN',
-            'STAFF',
+            'ROLE_SUPER_ADMIN',
+            'ROLE_CLINIC_ADMIN',
+            'ROLE_STAFF',
             'DOCTOR'
         )
         """)

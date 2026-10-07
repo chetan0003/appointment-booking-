@@ -14,6 +14,8 @@ public record PaymentResponse(
 
         String clinicName,
 
+        String submittedBy,
+
         Long subscriptionId,
 
         Long planId,

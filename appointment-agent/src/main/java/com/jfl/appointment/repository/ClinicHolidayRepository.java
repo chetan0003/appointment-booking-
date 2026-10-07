@@ -18,4 +18,9 @@ public interface ClinicHolidayRepository
     List<ClinicHoliday> findByClinicIdAndActiveTrueOrderByHolidayDateAsc(
             Long clinicId
     );
+
+    Optional<ClinicHoliday> findByIdAndClinicId(
+            Long id,
+            Long clinicId
+    );
 }
