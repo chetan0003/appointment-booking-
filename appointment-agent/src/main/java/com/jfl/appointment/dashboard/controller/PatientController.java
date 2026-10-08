@@ -3,6 +3,7 @@ package com.jfl.appointment.dashboard.controller;
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
 import com.jfl.appointment.dashboard.service.PatientService;
+import com.jfl.appointment.security.SecurityContextService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,13 +17,14 @@ import java.util.List;
 
 @RestController
 @Slf4j
-@RequestMapping("/api/dashboard/clinics/{clinicId}/patients")
+@RequestMapping("/api/dashboard/clinics/patients")
 @RequiredArgsConstructor
 public class PatientController {
 
 
     private final PatientService patientService;
     private final AppointmentAdminService appointmentAdminService;
+    private final SecurityContextService securityContextService;
 
 
     @PreAuthorize("""
@@ -35,9 +37,8 @@ public class PatientController {
             """)
     @PostMapping
     public ResponseEntity<ApiResponse<PatientResponseDto>> createPatient(
-            @PathVariable Long clinicId,
             @Valid @RequestBody CreatePatientRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Creating patient. clinicId={}, name={}, whatsapp={}",
                 clinicId,
@@ -71,10 +72,9 @@ public class PatientController {
         """)
     @PutMapping("/{patientId}")
     public ResponseEntity<ApiResponse<PatientResponseDto>> updatePatient(
-            @PathVariable Long clinicId,
             @PathVariable Long patientId,
             @Valid @RequestBody UpdatePatientRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Updating patient. clinicId={}, patientId={}, name={}, whatsapp={}",
                 clinicId,
@@ -110,9 +110,8 @@ public class PatientController {
             """)
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<List<PatientResponseDto>>> searchPatients(
-            @PathVariable Long clinicId,
             @RequestParam String query) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Searching patients. clinicId={}, query={}",
                 clinicId,
@@ -143,10 +142,9 @@ public class PatientController {
         """)
     @GetMapping
     public ResponseEntity<ApiResponse<Page<PatientResponseDto>>> getAllPatient(
-            @PathVariable Long clinicId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "5") int size) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Get all patients. clinicId={}, page={}, size={}",
                 clinicId,
@@ -171,11 +169,11 @@ public class PatientController {
 
     @GetMapping("/{patientId}/appointments")
     public ResponseEntity<ApiResponse<Page<AppointmentListItemDto>>> getPatientAppointments(
-            @PathVariable Long clinicId,
             @PathVariable Long patientId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-
+        log.info("getPatientAppointments request for patientId :: {}", patientId);
+        Long clinicId = securityContextService.getClinicId();
         Page<AppointmentListItemDto> appointments =
                 appointmentAdminService.getPatientAppointments(
                         clinicId,

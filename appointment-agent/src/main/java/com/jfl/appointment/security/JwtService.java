@@ -34,6 +34,7 @@ public class JwtService {
         return Jwts.builder()
                 .subject(userDetails.getUsername())
                 .claim("userId", userDetails.getUserId())
+                .claim("clinicId", userDetails.getClinicId())
                 .issuedAt(new Date())
                 .expiration(
                         new Date(

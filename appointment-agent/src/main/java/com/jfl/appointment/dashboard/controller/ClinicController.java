@@ -2,14 +2,13 @@ package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.ClinicService;
-import com.jfl.appointment.entity.Clinic;
-import com.jfl.appointment.entity.ClinicHoliday;
-import com.jfl.appointment.entity.ClinicWorkingHours;
+import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.ClinicHolidayRepository;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ClinicWorkingHoursRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +40,7 @@ public class ClinicController {
     private final ClinicRepository clinicRepository;
     private final ClinicHolidayRepository clinicHolidayRepository;
     private final ClinicWorkingHoursRepository clinicWorkingHoursRepository;
+    private final SecurityContextService securityContextService;
 
     @PreAuthorize("""
                 hasAnyRole(
@@ -94,6 +94,8 @@ public class ClinicController {
             @RequestBody CreateClinicRequest request) {
 
         log.info("Creating clinic");
+        id = securityContextService.getClinicId();
+
         // --------------------------------------------------
         // Check duplicate clinic
         // --------------------------------------------------
@@ -119,9 +121,24 @@ public class ClinicController {
             """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<ClinicResponse>>> getAllClinic() {
+        log.info("getAllClinic Request");
+        List<ClinicResponse> allClinic = null;
+        RoleName currentUserRole = securityContextService.getCurrentRole();
+        Long clinicId = securityContextService.getClinicId();
+        switch (currentUserRole) {
 
-        List<ClinicResponse> allClinic =
-                clinicService.getAllClinic();
+            case SUPER_ADMIN -> {
+                allClinic = clinicService.getAllClinic();
+            }
+
+            case CLINIC_ADMIN, STAFF, DOCTOR -> {
+                allClinic = clinicService.getClinicById(clinicId);
+            }
+
+            default -> throw new SecurityException(
+                    "You are not authorized to view doctors."
+            );
+        }
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -139,11 +156,11 @@ public class ClinicController {
                 'CLINIC_ADMIN'
             )
             """)
-    @PostMapping("/{clinicId}/working-hours")
+    @PostMapping("/working-hours")
     public ResponseEntity<ApiResponse<List<WorkingHourDto>>> createOrUpdateWorkingHours(
-            @PathVariable Long clinicId,
             @RequestBody List<CreateWorkingHourRequest> requests) {
 
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Create/Update working hours for clinicId: {}",
                 clinicId
@@ -264,20 +281,22 @@ public class ClinicController {
             )
             """)
     @GetMapping("/{clinicId}/working-hours")
-    public ResponseEntity<List<WorkingHourDto>> getWorkingHours(
-            @PathVariable Long clinicId) {
+    public ResponseEntity<List<WorkingHourDto>> getWorkingHours() {
+
+        Long clinicId = securityContextService.getClinicId();
+
         List<WorkingHourDto> byClinicIdAndActiveTrue = clinicWorkingHoursRepository.findByClinic_IdAndActiveTrue(clinicId).stream()
                 .map(hour ->
-                    new WorkingHourDto(
-                            hour.getId(),
-                            null,
-                            hour.getDayOfWeek().name(),
-                            hour.getStartTime(),
-                            hour.getEndTime(),
-                            hour.getBreakStartTime(),
-                            hour.getBreakEndTime(),
-                            hour.isActive()
-                    )).toList();
+                        new WorkingHourDto(
+                                hour.getId(),
+                                null,
+                                hour.getDayOfWeek().name(),
+                                hour.getStartTime(),
+                                hour.getEndTime(),
+                                hour.getBreakStartTime(),
+                                hour.getBreakEndTime(),
+                                hour.isActive()
+                        )).toList();
 
         return ResponseEntity.ok(
                 byClinicIdAndActiveTrue
@@ -293,11 +312,13 @@ public class ClinicController {
             """)
     @Cacheable(
             value = "clinicHolidays",
-            key = "#clinicId"
+            key = "@securityContextService.getClinicId()"
     )
-    @GetMapping("/{clinicId}/holidays")
-    public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays(
-            @PathVariable Long clinicId) {
+    @GetMapping("/holidays")
+    public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays() {
+        Long clinicId = securityContextService.getClinicId();
+        log.info("getClinicHolidays request for clinicId {}", clinicId);
+
         Month month = LocalDate.now().getMonth();
         List<ClinicHolidayDto> holidays =
                 clinicHolidayRepository
@@ -333,13 +354,12 @@ public class ClinicController {
             """)
     @CacheEvict(
             value = "clinicHolidays",
-            key = "#clinicId"
+            key = "@securityContextService.getClinicId()"
     )
-    @PostMapping("/{clinicId}/holidays/create")
+    @PostMapping("/holidays/create")
     public ResponseEntity<ApiResponse<ClinicHolidayDto>> createClinicHoliday(
-            @PathVariable Long clinicId,
             @Valid @RequestBody CreateClinicHolidayRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Creating clinic holiday. clinicId={}, date={}",
                 clinicId,
@@ -423,27 +443,17 @@ public class ClinicController {
             """)
     @CacheEvict(
             value = "clinicHolidays",
-            key = "#clinicId"
+            key = "@securityContextService.getClinicId()"
     )
-    @DeleteMapping("/{clinicId}/holidays/{holidayId}")
+    @DeleteMapping("/holidays/{holidayId}")
     public ResponseEntity<ApiResponse<Void>> deleteClinicHoliday(
-            @PathVariable Long clinicId,
             @PathVariable Long holidayId) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Deleting clinic holiday. clinicId={}, holidayId={}",
                 clinicId,
                 holidayId
         );
-
-        // --------------------------------------------------
-        // 1. Validate clinic
-        // --------------------------------------------------
-        if (!clinicRepository.existsById(clinicId)) {
-            throw new NotFoundException(
-                    "Clinic not found: " + clinicId
-            );
-        }
 
         // --------------------------------------------------
         // 2. Fetch holiday belonging to clinic

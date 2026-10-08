@@ -10,6 +10,7 @@ import com.jfl.appointment.n8n.dto.ServiceDto;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.DoctorServiceRepository;
 import com.jfl.appointment.repository.ServiceOfferingRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
@@ -18,17 +19,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
+
 
 @Slf4j
 @RestController
-@RequestMapping("/api/dashboard/clinics/{clinicId}/services")
+@RequestMapping("/api/dashboard/clinics/services")
 @RequiredArgsConstructor
 public class ServiceDashboardController {
 
@@ -36,6 +33,7 @@ public class ServiceDashboardController {
     private final ServiceOfferingRepository serviceRepository;
     private final ClinicRepository clinicRepository;
     private final DoctorServiceRepository doctorServiceRepository;
+    private final SecurityContextService securityContextService;
 
     @Transactional
     @CacheEvict(
@@ -50,8 +48,9 @@ public class ServiceDashboardController {
         """)
     @PostMapping
     public ResponseEntity<ApiResponse<ServiceDto>> createService(
-            @PathVariable Long clinicId,
             @RequestBody CreateServiceRequest request) {
+
+        Long clinicId = securityContextService.getClinicId();
 
         log.info(
                 "Creating service. clinicId={}, serviceName={}",
@@ -117,9 +116,8 @@ public class ServiceDashboardController {
         """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<ServiceDto>>> getServices(
-            @PathVariable Long clinicId,
             @RequestParam(required = false) Long doctorId) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Get Services : clinicId -> {}, doctorId -> {}",
                 clinicId,
@@ -158,9 +156,8 @@ public class ServiceDashboardController {
     @Transactional
     @DeleteMapping("/{serviceId}")
     public ResponseEntity<ApiResponse<Void>> deleteService(
-            @PathVariable Long clinicId,
             @PathVariable Long serviceId) {
-
+        Long clinicId = securityContextService.getClinicId();
         ServiceOffering service = serviceRepository
                 .findByIdAndClinicId(serviceId, clinicId)
                 .orElseThrow(() ->

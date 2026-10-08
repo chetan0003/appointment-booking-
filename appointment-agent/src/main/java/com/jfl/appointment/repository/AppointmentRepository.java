@@ -22,6 +22,7 @@ import java.util.Optional;
 public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
         JpaSpecificationExecutor<Appointment> {
 
+    Optional<Appointment> findByIdAndClinicId(Long appointmentId, Long clinicId);
     List<Appointment> findByDoctorIdAndAppointmentDateAndStatus(
             Long doctorId, LocalDate appointmentDate, AppointmentStatus status);
 
@@ -155,6 +156,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             select count(a) > 0
             from Appointment a
             where a.doctor.id = :doctorId
+              and a.clinic.id = :clinicId
               and a.appointmentDate = :date
               and a.id <> :appointmentId
               and a.status not in (
@@ -166,6 +168,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             """)
     boolean existsConflictForReschedule(
             @Param("doctorId") Long doctorId,
+            @Param("clinicId") Long clinicId,
             @Param("date") LocalDate date,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime,

@@ -273,8 +273,7 @@ public class PatientService {
         return patientRepository
                 .searchPatients(
                         clinicId,
-                        searchQuery,
-                        PatientProfileStatus.INCOMPLETE
+                        searchQuery
                 )
                 .stream()
                 .map(this::toDto)

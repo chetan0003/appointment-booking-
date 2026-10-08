@@ -20,7 +20,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -68,6 +67,7 @@ public class AppointmentAdminService {
             CreateAppointmentRequest request) {
 
         final boolean isWhatsApp = isWhatsAppRequest(request);
+        final Long clinicId2 = securityContextService.getClinicId();
 
         log.info(
                 "createAppointment source={}, clinicId={}, patientId={}, patientName={}, doctorId={}, date={} IdenpotentKey={}",
@@ -79,6 +79,9 @@ public class AppointmentAdminService {
                 request.appointmentDate(),
                 request.idempotencyKey()
         );
+        if (!Objects.equals(clinicId, clinicId2)) {
+            throw new SecurityException("User does not have access to clinic: " + clinicId);
+        }
 
         Long resolvedClinicId = clinicId != null ? clinicId : request.clinicId();
         if (resolvedClinicId == null) {
@@ -489,6 +492,12 @@ public class AppointmentAdminService {
                 "Creating next appointment. previousAppointmentId={}",
                 previousAppointmentId
         );
+        //clinic access check
+        Long clinicId = securityContextService.getClinicId();
+        if(!Objects.equals(request.clinicId(), clinicId)) {
+            throw new SecurityException(
+                    "User does not have access to clinic: " + clinicId);
+        }
         ClinicSubscription subscription =
                 subscriptionFeatureService.getActiveSubscription(request.clinicId());
         //VALIDATE SUBSCRIPTION PLAN
@@ -714,13 +723,8 @@ public class AppointmentAdminService {
                                                          Long doctorId, AppointmentStatus status,
                                                          Long serviceId, Pageable pageable) {
 
-        if (!clinicAccessService
-                .hasAccessToClinic(clinicId)) {
+         clinicId = securityContextService.getClinicId();
 
-            throw new SecurityException(
-                    "No access to clinic"
-            );
-        }
 
         if (securityContextService.hasRole("DOCTOR")) {
 
@@ -767,7 +771,11 @@ public class AppointmentAdminService {
      */
     @Transactional
     public AppointmentListItemDto cancelAppointment(Long appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        log.info("cancelAppointment request for  appointmentId:: {}", appointmentId);
+
+        Long clinicId = securityContextService.getClinicId();
+
+        Appointment appointment = appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() -> new NotFoundException("Appointment not found: " + appointmentId));
 
         if (appointment.getStatus() != AppointmentStatus.CONFIRMED) {
@@ -796,8 +804,13 @@ public class AppointmentAdminService {
             Long appointmentId,
             RescheduleAppointmentRequest request) {
 
+        log.info("rescheduleAppointment request for appointmentId:: {}", appointmentId);
+
+        Long clinicId = securityContextService.getClinicId();
+
+
         Appointment appointment =
-                appointmentRepository.findById(appointmentId)
+                appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                         .orElseThrow(() ->
                                 new NotFoundException(
                                         "Appointment not found: " + appointmentId
@@ -836,6 +849,7 @@ public class AppointmentAdminService {
         boolean slotAvailable =
                 appointmentRepository.existsConflictForReschedule(
                         appointment.getDoctor().getId(),
+                        clinicId,
                         request.appointmentDate(),
                         request.startTime(),
                         request.endTime(),
@@ -962,8 +976,11 @@ public class AppointmentAdminService {
     public AppointmentListItemDto suggestFollowUp(
             Long appointmentId,
             FollowUpRequest request) {
+        log.info("rescheduleAppointment request for appointmentId:: {}", appointmentId);
 
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+        Long clinicId = securityContextService.getClinicId();
+
+        Appointment appointment = appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(
                                 "Appointment not found: " + appointmentId
@@ -1033,6 +1050,9 @@ public class AppointmentAdminService {
             Long patientId,
             int page,
             int size) {
+        log.info("rescheduleAppointment request for patientId:: {}", patientId);
+        RoleName currentUserRole = securityContextService.getCurrentRole();
+        clinicId = securityContextService.getClinicId();
 
         if (page < 0) {
             throw new IllegalArgumentException(
@@ -1054,14 +1074,6 @@ public class AppointmentAdminService {
                 );
 
         Pageable pageable = PageRequest.of(page, size);
-
-        Collection<? extends GrantedAuthority> authorities = securityContextService.getCurrentUser().getAuthorities();
-        RoleName currentUserRole = authorities.stream().map(GrantedAuthority::getAuthority)
-                .filter(authority -> authority.startsWith("ROLE_"))
-                .map(authority -> authority.substring(5))
-                .map(authority -> RoleName.valueOf(authority))
-                .findFirst()
-                .orElse(null);
 
         Page<Appointment> appointments;
 
@@ -1104,6 +1116,9 @@ public class AppointmentAdminService {
     @Transactional(readOnly = true)
     public List<WeeklyAppointmentDto> getAppointmentsThisWeek(
             Long clinicId) {
+        log.info("getAppointmentsThisWeek request for clinicId {}", clinicId);
+
+        clinicId = securityContextService.getClinicId();
 
         LocalDate today = LocalDate.now();
 
@@ -1162,7 +1177,9 @@ public class AppointmentAdminService {
             Long clinicId,
             Long appointmentId) {
         log.info("deleteAppointment method started ");
-        Appointment appointment = appointmentRepository.findById(appointmentId)
+
+
+        Appointment appointment = appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(
                                 "Appointment not found: " + appointmentId

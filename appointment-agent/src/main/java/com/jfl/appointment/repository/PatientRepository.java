@@ -35,7 +35,6 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
             SELECT p
             FROM Patient p
             WHERE p.clinic.id = :clinicId
-                AND p.profileStatus <> :profileStatus
               AND (
                     LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%'))
                     OR p.whatsappNumber LIKE CONCAT('%', :query, '%')
@@ -44,8 +43,7 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
             """)
     List<Patient> searchPatients(
             @Param("clinicId") Long clinicId,
-            @Param("query") String query,
-            @Param("profileStatus") PatientProfileStatus profileStatus
+            @Param("query") String query
     );
 
     Page<Patient> findByClinicId(

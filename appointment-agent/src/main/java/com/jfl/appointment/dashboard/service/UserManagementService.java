@@ -18,10 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Slf4j
 @Service
@@ -43,18 +40,11 @@ public class UserManagementService {
     public AppUser createUser(
             CreateUserRequest request) {
        log.info("createUser request");
-
-
-        Collection<? extends GrantedAuthority> authorities =
-                securityContextService.getCurrentUser().getAuthorities();
-
-        RoleName currentUserRole = authorities.stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(authority -> authority.startsWith("ROLE_"))
-                .map(authority -> authority.substring(5))
-                .map(authority -> RoleName.valueOf(authority))
-                .findFirst()
-                .orElse(null);
+        Long clinicId = securityContextService.getClinicId();
+        RoleName currentUserRole = securityContextService.getCurrentRole();
+        if (!Objects.equals(request.clinicId(), clinicId)) {
+            throw new SecurityException("Clinic does not have access to this user :: "+request.username());
+        }
 
         if (RoleName.CLINIC_ADMIN.equals(currentUserRole)) {
             ClinicSubscription subscription =

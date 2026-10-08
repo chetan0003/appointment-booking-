@@ -17,12 +17,10 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.DayOfWeek;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -32,7 +30,7 @@ import static com.jfl.appointment.util.Constants.DR_PREFIX;
 
 @RestController
 @Slf4j
-@RequestMapping("/api/dashboard/clinics/{clinicId}/doctors")
+@RequestMapping("/api/dashboard/clinics/doctors")
 @RequiredArgsConstructor
 public class DoctorDashboardController {
 
@@ -60,9 +58,8 @@ public class DoctorDashboardController {
             """)
     @PostMapping
     public ResponseEntity<ApiResponse<DoctorDto>> createDoctor(
-            @PathVariable Long clinicId,
             @RequestBody CreateDoctorRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Create Doctor : clinicId -> {}, name -> {}, serviceId -> {}",
                 clinicId,
@@ -108,6 +105,8 @@ public class DoctorDashboardController {
                                 )
                         );
 
+        // Evict service cache
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
         // --------------------------------------------------
         // 3. Create doctor
         // --------------------------------------------------
@@ -168,10 +167,9 @@ public class DoctorDashboardController {
             """)
     @PutMapping("/{doctorId}")
     public ResponseEntity<ApiResponse<DoctorDto>> updateDoctor(
-            @PathVariable Long clinicId,
             @PathVariable Long doctorId,
             @RequestBody UpdateDoctorRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Update Doctor : clinicId -> {}, doctorId -> {}, serviceId -> {}",
                 clinicId,
@@ -189,7 +187,7 @@ public class DoctorDashboardController {
                                 "Doctor not found: " + doctorId
                         )
                 );
-
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
         // --------------------------------------------------
         // 2. Validate service belongs to same clinic
         // --------------------------------------------------
@@ -270,22 +268,15 @@ public class DoctorDashboardController {
             """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<DoctorDto>>> getDoctors(
-            @PathVariable Long clinicId,
             @RequestParam(required = false) Long serviceId) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Get Doctors : clinicId -> {}, serviceId -> {}",
                 clinicId,
                 serviceId
         );
 
-        Collection<? extends GrantedAuthority> authorities = securityContextService.getCurrentUser().getAuthorities();
-        RoleName currentUserRole = authorities.stream().map(GrantedAuthority::getAuthority)
-                .filter(authority -> authority.startsWith("ROLE_"))
-                .map(authority -> authority.substring(5))
-                .map(authority -> RoleName.valueOf(authority))
-                .findFirst()
-                .orElse(null);
+        RoleName currentUserRole = securityContextService.getCurrentRole();
 
         List<Doctor> doctorEntities;
 
@@ -378,10 +369,9 @@ public class DoctorDashboardController {
             """)
     @PostMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> createOrUpdateAvailability(
-            @PathVariable Long clinicId,
             @PathVariable Long doctorId,
             @RequestBody List<CreateDoctorAvailabilityRequest> requests) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Create/Update doctor availability. clinicId={}, doctorId={}",
                 clinicId,
@@ -628,8 +618,8 @@ public class DoctorDashboardController {
             """)
     @GetMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> getDoctorAvailability(
-            @PathVariable Long clinicId,
             @PathVariable Long doctorId) {
+        Long clinicId = securityContextService.getClinicId();
 
         log.info(
                 "Get doctor availability. clinicId={}, doctorId={}",
@@ -695,8 +685,9 @@ public class DoctorDashboardController {
 
     @DeleteMapping("/{doctorId}/delete")
     public ResponseEntity<ApiResponse<Void>> deleteDoctor(
-            @PathVariable Long clinicId,
             @PathVariable Long doctorId) {
+
+        Long clinicId = securityContextService.getClinicId();
 
         Doctor doctor = doctorRepository
                 .findByIdAndClinicId(doctorId, clinicId)

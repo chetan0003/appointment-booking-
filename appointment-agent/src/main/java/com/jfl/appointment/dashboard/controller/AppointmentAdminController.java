@@ -8,6 +8,7 @@ import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.AppointmentRepository;
 import com.jfl.appointment.repository.ClinicQueueEntryRepository;
 import com.jfl.appointment.repository.NotificationRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ public class AppointmentAdminController {
     private final AppointmentRepository appointmentRepository;
     private final NotificationRepository notificationRepository;
     private final ClinicQueueEntryRepository queueEntryRepository;
+    private final SecurityContextService securityContextService;
 
     @PreAuthorize("""
             hasAnyRole(
@@ -44,11 +46,10 @@ public class AppointmentAdminController {
                 'DOCTOR'
             )
             """)
-    @PostMapping("/api/dashboard/clinics/{clinicId}/appointments")
+    @PostMapping("/api/dashboard/clinics/appointments")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> createAppointment(
-            @PathVariable Long clinicId,
             @Valid @RequestBody CreateAppointmentRequest request) {
-
+        Long clinicId = securityContextService.getClinicId();
         log.info(
                 "Creating appointment. clinicId={}, patientId={}, doctorId={}, serviceId={}, date={}",
                 clinicId,
@@ -187,9 +188,9 @@ public class AppointmentAdminController {
                 appointmentId,
                 request.status()
         );
-
+        Long clinicId = securityContextService.getClinicId();
         Appointment appointment = appointmentRepository
-                .findById(appointmentId)
+                .findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(
                                 "Appointment not found: " + appointmentId

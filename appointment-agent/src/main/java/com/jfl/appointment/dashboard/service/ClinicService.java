@@ -104,6 +104,11 @@ public class ClinicService {
                 .toList();
     }
 
+    public List<ClinicResponse> getClinicById(Long clinicId) {
+        return clinicRepository.findById(clinicId).stream()
+                .map(this::toDto).toList();
+    }
+
     public ClinicResponse toDto(Clinic savedClinic) {
         return new ClinicResponse(
                 savedClinic.getId(),

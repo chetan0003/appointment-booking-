@@ -1,9 +1,11 @@
 package com.jfl.appointment.security;
 
 
+import com.jfl.appointment.entity.RoleName;
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +33,9 @@ public class SecurityContextService {
                 authentication.getPrincipal();
     }
 
+    public Long getClinicId() {
+        return getCurrentUser().getClinicId();
+    }
     public Long getCurrentUserId() {
 
         return getCurrentUser().getUserId();
@@ -51,4 +56,19 @@ public class SecurityContextService {
                                 .equals("ROLE_" + role)
                 );
     }
+
+    public RoleName getCurrentRole() {
+       return getCurrentUser()
+                .getAuthorities()
+                .stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(a -> a.startsWith("ROLE_"))
+                .map(a -> a.substring("ROLE_".length()))
+                .map(RoleName::valueOf)
+                .findFirst()
+                .orElseThrow(() ->
+                        new IllegalStateException("Authenticated user has no valid role")
+                );
+    }
+
 }

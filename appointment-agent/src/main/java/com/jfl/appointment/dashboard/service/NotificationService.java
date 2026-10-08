@@ -64,7 +64,7 @@ public class NotificationService {
 
         String message = "New appointment booked for "
                 + patientName
-                + " with Dr. "
+                + " with "
                 + doctorName;
 
         List<AppNotification> notifications = recipientIds.stream()

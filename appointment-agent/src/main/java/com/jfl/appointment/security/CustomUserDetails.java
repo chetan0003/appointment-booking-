@@ -12,14 +12,16 @@ import java.util.Collection;
 public class CustomUserDetails implements UserDetails {
 
     private final Long userId;
+    private final Long clinicId;
     private final String username;
     private final String password;
     private final boolean enabled;
     private final Collection<? extends GrantedAuthority> authorities;
 
-    public CustomUserDetails(AppUser user) {
+    public CustomUserDetails(AppUser user,Long clinicId) {
 
         this.userId = user.getId();
+        this.clinicId = clinicId;
         this.username = user.getUsername();
         this.password = user.getPassword();
         this.enabled = user.isEnabled();
