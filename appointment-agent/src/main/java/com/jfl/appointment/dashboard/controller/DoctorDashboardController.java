@@ -7,6 +7,7 @@ import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.DoctorDto;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +44,7 @@ public class DoctorDashboardController {
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final SecurityContextService securityContextService;
     private final ClinicAccessService clinicAccessService;
+    private final ClinicContextResolver clinicContextResolver;
 
 
     @Transactional
@@ -58,8 +60,13 @@ public class DoctorDashboardController {
             """)
     @PostMapping
     public ResponseEntity<ApiResponse<DoctorDto>> createDoctor(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestBody CreateDoctorRequest request) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Create Doctor : clinicId -> {}, name -> {}, serviceId -> {}",
                 clinicId,
@@ -167,9 +174,14 @@ public class DoctorDashboardController {
             """)
     @PutMapping("/{doctorId}")
     public ResponseEntity<ApiResponse<DoctorDto>> updateDoctor(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId,
             @RequestBody UpdateDoctorRequest request) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Update Doctor : clinicId -> {}, doctorId -> {}, serviceId -> {}",
                 clinicId,
@@ -268,8 +280,13 @@ public class DoctorDashboardController {
             """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<DoctorDto>>> getDoctors(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestParam(required = false) Long serviceId) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Get Doctors : clinicId -> {}, serviceId -> {}",
                 clinicId,
@@ -369,9 +386,14 @@ public class DoctorDashboardController {
             """)
     @PostMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> createOrUpdateAvailability(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId,
             @RequestBody List<CreateDoctorAvailabilityRequest> requests) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Create/Update doctor availability. clinicId={}, doctorId={}",
                 clinicId,
@@ -618,8 +640,13 @@ public class DoctorDashboardController {
             """)
     @GetMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> getDoctorAvailability(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         log.info(
                 "Get doctor availability. clinicId={}, doctorId={}",
@@ -685,9 +712,14 @@ public class DoctorDashboardController {
 
     @DeleteMapping("/{doctorId}/delete")
     public ResponseEntity<ApiResponse<Void>> deleteDoctor(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId) {
 
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         Doctor doctor = doctorRepository
                 .findByIdAndClinicId(doctorId, clinicId)

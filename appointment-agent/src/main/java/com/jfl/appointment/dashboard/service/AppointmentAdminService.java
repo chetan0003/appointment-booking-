@@ -12,6 +12,7 @@ import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.IntegrationUtil;
 import com.jfl.appointment.security.SecurityContextService;
 import com.jfl.appointment.service.AppointmentQrService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.yaml.snakeyaml.util.EnumUtils;
 
 import java.math.BigDecimal;
 import java.time.*;
@@ -60,6 +62,7 @@ public class AppointmentAdminService {
     private final AppointmentPolicyService appointmentPolicyService;
     private final AppointmentQrService appointmentQrService;
     private final AppointmentQrCredentialRepository appointmentQrCredentialRepository;
+    private final ClinicContextResolver contextResolver;
 
     @Transactional
     public AppointmentListItemDto createAppointment(
@@ -79,6 +82,7 @@ public class AppointmentAdminService {
                 request.appointmentDate(),
                 request.idempotencyKey()
         );
+
         if (!Objects.equals(clinicId, clinicId2)) {
             throw new SecurityException("User does not have access to clinic: " + clinicId);
         }
@@ -485,6 +489,7 @@ public class AppointmentAdminService {
 
     @Transactional
     public AppointmentListItemDto createNextAppointment(
+            Long requestedClinicId,
             Long previousAppointmentId,
             CreateNextAppointmentRequest request) {
 
@@ -493,7 +498,7 @@ public class AppointmentAdminService {
                 previousAppointmentId
         );
         //clinic access check
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
         if(!Objects.equals(request.clinicId(), clinicId)) {
             throw new SecurityException(
                     "User does not have access to clinic: " + clinicId);
@@ -719,11 +724,11 @@ public class AppointmentAdminService {
     }
 
     @Transactional(readOnly = true)
-    public Page<AppointmentListItemDto> listAppointments(Long clinicId, Long appointmentId, LocalDate from, LocalDate to,
+    public Page<AppointmentListItemDto> listAppointments(Long requestedClinicId, Long appointmentId, LocalDate from, LocalDate to,
                                                          Long doctorId, AppointmentStatus status,
                                                          Long serviceId, Pageable pageable) {
 
-         clinicId = securityContextService.getClinicId();
+         Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
 
 
         if (securityContextService.hasRole("DOCTOR")) {
@@ -782,6 +787,15 @@ public class AppointmentAdminService {
             throw new SlotUnavailableException(
                     "Only a CONFIRMED appointment can be cancelled (current status: " + appointment.getStatus() + ")");
         }
+        ClinicQueueEntry queueEntry =
+                queueEntryRepository
+                        .findByAppointment_Id(appointmentId)
+                        .orElse(null);
+        if(queueEntry != null) {
+            queueEntry.setCancelledAt(LocalDateTime.now());
+            queueEntry.setQueueStatus(QueueStatus.CANCELLED);
+        }
+        appointment.setCancelledAt(LocalDateTime.now());
         appointment.setStatus(AppointmentStatus.CANCELLED);
         ClinicSubscription subscription = subscriptionFeatureService.getActiveSubscription(appointment.getClinic().getId());
         if (subscriptionFeatureService.isWhatsAppNotificationEnable(subscription.getPlan())) {
@@ -816,6 +830,13 @@ public class AppointmentAdminService {
                                         "Appointment not found: " + appointmentId
                                 )
                         );
+
+        if (appointment.getAppointmentDate().isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException(
+                    "Past appointments cannot be rescheduled. Please book a new appointment."
+            );
+        }
+
 
         // ---------------------------------------------
         // Validate date/time
@@ -939,7 +960,12 @@ public class AppointmentAdminService {
                 queueEntry != null ? queueEntry.getQueueNumber() : null,
                 queueEntry != null ? queueEntry.getQueueDate() : null,
                 queueEntry != null ? queueEntry.getQueueStatus() : null,
-                rewToken
+                queueEntry != null ? queueEntry.getCheckedInAt() : null,
+                queueEntry != null ? queueEntry.getConsultationStartedAt() : null,
+                queueEntry != null ? queueEntry.getCompletedAt() : null,
+                rewToken,
+                a.getCreatedAt(),
+                queueEntry != null ? queueEntry.getCancelledAt() : a.getCancelledAt()
 
         );
     }
@@ -1023,6 +1049,7 @@ public class AppointmentAdminService {
         queueEntryRepository.findByAppointment_Id(appointmentId)
                 .ifPresent(queueEntry -> {
                     queueEntry.setQueueStatus(QueueStatus.COMPLETED);
+                    queueEntry.setCompletedAt(LocalDateTime.now());
                     save[0] = queueEntryRepository.save(queueEntry);
                 });
 
@@ -1174,11 +1201,11 @@ public class AppointmentAdminService {
     @Transactional
     @Modifying
     public void deleteAppointment(
-            Long clinicId,
+            Long requestedClinicId,
             Long appointmentId) {
         log.info("deleteAppointment method started ");
 
-
+        Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
         Appointment appointment = appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(

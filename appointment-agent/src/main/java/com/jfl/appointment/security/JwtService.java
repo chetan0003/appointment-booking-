@@ -29,7 +29,7 @@ public class JwtService {
         return Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(CustomUserDetails userDetails) {
+    public String generateToken0(CustomUserDetails userDetails) {
 
         return Jwts.builder()
                 .subject(userDetails.getUsername())
@@ -45,6 +45,27 @@ public class JwtService {
                 .signWith(getSigningKey())
                 .compact();
     }
+
+
+    public String generateToken(CustomUserDetails userDetails) {
+
+        var jwtBuilder = Jwts.builder()
+                .subject(userDetails.getUsername())
+                .claim("userId", userDetails.getUserId())
+                .issuedAt(new Date())
+                .expiration(
+                        new Date(System.currentTimeMillis() + expiration)
+                );
+        // Add clinicId only for clinic-associated users
+        if (userDetails.getClinicId() != null) {
+            jwtBuilder.claim("clinicId", userDetails.getClinicId());
+        }
+
+        return jwtBuilder
+                .signWith(getSigningKey())
+                .compact();
+    }
+
 
     public String extractUsername(String token) {
 

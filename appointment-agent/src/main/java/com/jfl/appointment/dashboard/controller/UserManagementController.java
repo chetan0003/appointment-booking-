@@ -27,9 +27,15 @@ public class UserManagementController {
         hasAnyRole('SUPER_ADMIN','CLINIC_ADMIN')
     """)
     public AppUser createUser(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @Valid @RequestBody CreateUserRequest request) {
 
         return userManagementService.createUser(
+                requestedClinicId,
                 request
         );
     }

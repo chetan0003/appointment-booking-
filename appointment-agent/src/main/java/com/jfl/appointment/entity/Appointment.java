@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -71,4 +72,7 @@ public class Appointment extends AuditableEntity {
 
     @Column(name = "whatsapp_number")
     private String whatsappNumber;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 }

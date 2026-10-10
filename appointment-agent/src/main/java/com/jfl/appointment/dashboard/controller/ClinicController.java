@@ -1,6 +1,8 @@
 package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
+import com.jfl.appointment.dashboard.service.ClinicAccessService;
+import com.jfl.appointment.dashboard.service.ClinicHolidayService;
 import com.jfl.appointment.dashboard.service.ClinicService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.ConflictException;
@@ -9,6 +11,7 @@ import com.jfl.appointment.repository.ClinicHolidayRepository;
 import com.jfl.appointment.repository.ClinicRepository;
 import com.jfl.appointment.repository.ClinicWorkingHoursRepository;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +44,8 @@ public class ClinicController {
     private final ClinicHolidayRepository clinicHolidayRepository;
     private final ClinicWorkingHoursRepository clinicWorkingHoursRepository;
     private final SecurityContextService securityContextService;
+    private final ClinicContextResolver clinicContextResolver;
+    private final ClinicHolidayService clinicHolidayService;
 
     @PreAuthorize("""
                 hasAnyRole(
@@ -90,11 +95,16 @@ public class ClinicController {
             """)
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<ClinicResponse>> updateClinic(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long id,
             @RequestBody CreateClinicRequest request) {
 
         log.info("Creating clinic");
-        id = securityContextService.getClinicId();
+        id = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         // --------------------------------------------------
         // Check duplicate clinic
@@ -120,11 +130,19 @@ public class ClinicController {
             )
             """)
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ClinicResponse>>> getAllClinic() {
+    public ResponseEntity<ApiResponse<List<ClinicResponse>>> getAllClinic(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId
+    ) {
         log.info("getAllClinic Request");
+
+
         List<ClinicResponse> allClinic = null;
         RoleName currentUserRole = securityContextService.getCurrentRole();
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         switch (currentUserRole) {
 
             case SUPER_ADMIN -> {
@@ -158,9 +176,14 @@ public class ClinicController {
             """)
     @PostMapping("/working-hours")
     public ResponseEntity<ApiResponse<List<WorkingHourDto>>> createOrUpdateWorkingHours(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestBody List<CreateWorkingHourRequest> requests) {
 
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Create/Update working hours for clinicId: {}",
                 clinicId
@@ -280,10 +303,16 @@ public class ClinicController {
                 'CLINIC_ADMIN'
             )
             """)
-    @GetMapping("/{clinicId}/working-hours")
-    public ResponseEntity<List<WorkingHourDto>> getWorkingHours() {
+    @GetMapping("/working-hours")
+    public ResponseEntity<List<WorkingHourDto>> getWorkingHours(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId
+    ) {
 
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         List<WorkingHourDto> byClinicIdAndActiveTrue = clinicWorkingHoursRepository.findByClinic_IdAndActiveTrue(clinicId).stream()
                 .map(hour ->
@@ -305,36 +334,29 @@ public class ClinicController {
 
 
     @PreAuthorize("""
-            hasAnyRole(
-                'SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
-    @Cacheable(
-            value = "clinicHolidays",
-            key = "@securityContextService.getClinicId()"
-    )
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @GetMapping("/holidays")
-    public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays() {
-        Long clinicId = securityContextService.getClinicId();
-        log.info("getClinicHolidays request for clinicId {}", clinicId);
+    public ResponseEntity<ApiResponse<List<ClinicHolidayDto>>> getClinicHolidays(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId
+    ) {
+        Long clinicId =
+                clinicContextResolver.resolveClinicId(requestedClinicId);
 
-        Month month = LocalDate.now().getMonth();
+        log.info(
+                "Fetching clinic holidays. clinicId={}",
+                clinicId
+        );
+
         List<ClinicHolidayDto> holidays =
-                clinicHolidayRepository
-                        .findByClinicIdAndActiveTrueOrderByHolidayDateAsc(
-                                clinicId
-                        )
-                        .stream()
-                        .filter(f -> month.equals(f.getHolidayDate().getMonth()))
-                        .map(holiday -> new ClinicHolidayDto(
-                                holiday.getId(),
-                                holiday.getName(),
-                                holiday.getClinic().getId(),
-                                holiday.getHolidayDate(),
-                                holiday.isActive()
-                        ))
-                        .toList();
+                clinicHolidayService.getClinicHolidays(clinicId);
 
         return ResponseEntity
                 .status(HttpStatus.OK)
@@ -347,84 +369,36 @@ public class ClinicController {
     }
 
     @PreAuthorize("""
-            hasAnyRole(
-                'SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
-    @CacheEvict(
-            value = "clinicHolidays",
-            key = "@securityContextService.getClinicId()"
-    )
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @PostMapping("/holidays/create")
     public ResponseEntity<ApiResponse<ClinicHolidayDto>> createClinicHoliday(
-            @Valid @RequestBody CreateClinicHolidayRequest request) {
-        Long clinicId = securityContextService.getClinicId();
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
+
+            @Valid @RequestBody CreateClinicHolidayRequest request
+    ) {
+        Long clinicId =
+                clinicContextResolver.resolveClinicId(requestedClinicId);
+
         log.info(
                 "Creating clinic holiday. clinicId={}, date={}",
                 clinicId,
                 request.holidayDate()
         );
 
-        // --------------------------------------------------
-        // 1. Validate clinic
-        // --------------------------------------------------
-        Clinic clinic = clinicRepository
-                .findById(clinicId)
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Clinic not found: " + clinicId
-                        ));
-
-        // --------------------------------------------------
-        // 2. Check duplicate holiday
-        // --------------------------------------------------
-        boolean alreadyExists =
-                clinicHolidayRepository
-                        .findByClinicIdAndHolidayDateAndActiveTrue(
-                                clinicId,
-                                request.holidayDate()
-                        )
-                        .isPresent();
-
-        if (alreadyExists) {
-            throw new ConflictException(
-                    "Holiday already exists for date: "
-                            + request.holidayDate()
-            );
-        }
-
-        // --------------------------------------------------
-        // 3. Create holiday
-        // --------------------------------------------------
-        ClinicHoliday holiday = new ClinicHoliday();
-
-        holiday.setClinic(clinic);
-        holiday.setHolidayDate(request.holidayDate());
-        holiday.setName(request.name());
-        holiday.setActive(true);
-
-        // --------------------------------------------------
-        // 4. Save
-        // --------------------------------------------------
-        ClinicHoliday savedHoliday =
-                clinicHolidayRepository.save(holiday);
-
-        // --------------------------------------------------
-        // 5. Convert to DTO
-        // --------------------------------------------------
         ClinicHolidayDto response =
-                new ClinicHolidayDto(
-                        savedHoliday.getId(),
-                        savedHoliday.getName(),
-                        savedHoliday.getClinic().getId(),
-                        savedHoliday.getHolidayDate(),
-                        savedHoliday.isActive()
+                clinicHolidayService.createClinicHoliday(
+                        clinicId,
+                        request
                 );
 
-        // --------------------------------------------------
-        // 6. Generic API response
-        // --------------------------------------------------
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(
@@ -436,46 +410,42 @@ public class ClinicController {
     }
 
     @PreAuthorize("""
-            hasAnyRole(
-                'SUPER_ADMIN',
-                'CLINIC_ADMIN'
-            )
-            """)
-    @CacheEvict(
-            value = "clinicHolidays",
-            key = "@securityContextService.getClinicId()"
-    )
+        hasAnyRole(
+            'SUPER_ADMIN',
+            'CLINIC_ADMIN'
+        )
+        """)
     @DeleteMapping("/holidays/{holidayId}")
     public ResponseEntity<ApiResponse<Void>> deleteClinicHoliday(
-            @PathVariable Long holidayId) {
-        Long clinicId = securityContextService.getClinicId();
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
+
+            @PathVariable Long holidayId
+    ) {
+        Long clinicId =
+                clinicContextResolver.resolveClinicId(requestedClinicId);
+
         log.info(
                 "Deleting clinic holiday. clinicId={}, holidayId={}",
                 clinicId,
                 holidayId
         );
 
-        // --------------------------------------------------
-        // 2. Fetch holiday belonging to clinic
-        // --------------------------------------------------
-        ClinicHoliday holiday = clinicHolidayRepository
-                .findByIdAndClinicId(holidayId, clinicId)
-                .orElseThrow(() ->
-                        new NotFoundException(
-                                "Clinic holiday not found: " + holidayId
+        clinicHolidayService.deleteClinicHoliday(
+                clinicId,
+                holidayId
+        );
+
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(
+                        ApiResponse.success(
+                                "Clinic holiday deleted successfully.",
+                                null
                         )
                 );
-
-        clinicHolidayRepository.delete(holiday);
-
-        // --------------------------------------------------
-        // 5. API response
-        // --------------------------------------------------
-        return ResponseEntity.ok(
-                ApiResponse.success(
-                        "Clinic holiday deleted successfully.",
-                        null
-                )
-        );
     }
 }

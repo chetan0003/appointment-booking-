@@ -6,6 +6,7 @@ import com.jfl.appointment.entity.QueueStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 public record AppointmentListItemDto(
@@ -32,6 +33,10 @@ public record AppointmentListItemDto(
         Integer queueNumber,
         LocalDate queueDate,
         QueueStatus queueStatus,
-        String rawToken
-
+        LocalDateTime checkedInAt,
+        LocalDateTime consultationStartedAt,
+        LocalDateTime completedAt,
+        String rawToken,
+        LocalDateTime confirmedAt,
+        LocalDateTime CancelledAt
 ) {}

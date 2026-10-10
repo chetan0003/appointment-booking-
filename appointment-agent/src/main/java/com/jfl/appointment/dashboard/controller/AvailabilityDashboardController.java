@@ -4,6 +4,7 @@ import com.jfl.appointment.dashboard.dto.ApiResponse;
 import com.jfl.appointment.dashboard.service.DashboardAvailabilityService;
 import com.jfl.appointment.n8n.dto.AvailabilityResponse;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,8 @@ import java.time.LocalDate;
 public class AvailabilityDashboardController {
 
     private final DashboardAvailabilityService dashboardAvailabilityService;
-    private final SecurityContextService securityContextService;
+    private final ClinicContextResolver clinicContextResolver;
+
 
     @PreAuthorize("""
         hasAnyRole(
@@ -30,12 +32,17 @@ public class AvailabilityDashboardController {
         """)
     @GetMapping
     public ResponseEntity<ApiResponse<AvailabilityResponse>> getAvailability(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestParam Long doctorId,
             @RequestParam(required = false) Long serviceId,
             @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate date) {
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         AvailabilityResponse availability =
                 dashboardAvailabilityService.getAvailability(
                         clinicId,

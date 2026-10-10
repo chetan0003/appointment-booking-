@@ -134,7 +134,7 @@ public class NotificationService {
 
         String message = "Rescheduled appointment for "
                 + patientName
-                + " with Dr. "
+                + " with "
                 + doctorName;
 
         List<AppNotification> notifications = recipientIds.stream()
@@ -204,7 +204,7 @@ public class NotificationService {
 
         String message = "Cancelled appointment for "
                 + patientName
-                + " with Dr. "
+                + " with "
                 + doctorName;
 
         List<AppNotification> notifications = recipientIds.stream()

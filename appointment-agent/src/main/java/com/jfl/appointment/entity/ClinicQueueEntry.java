@@ -58,6 +58,8 @@ public class ClinicQueueEntry extends AuditableEntity {
 
     private LocalDateTime calledAt;
 
+    private LocalDateTime cancelledAt;
+
     private LocalDateTime consultationStartedAt;
 
     private LocalDateTime completedAt;

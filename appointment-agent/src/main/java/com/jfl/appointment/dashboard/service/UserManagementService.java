@@ -9,11 +9,11 @@ import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import com.jfl.appointment.service.ClinicSubscriptionService;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,12 +35,14 @@ public class UserManagementService {
     private final SubscriptionFeatureService subscriptionFeatureService;
     private final ClinicSubscriptionService clinicSubscriptionService;
     private final SecurityContextService securityContextService;
+    private final ClinicContextResolver clinicContextResolver;
 
     @Transactional
     public AppUser createUser(
+            Long requestedClinicId,
             CreateUserRequest request) {
        log.info("createUser request");
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         RoleName currentUserRole = securityContextService.getCurrentRole();
         if (!Objects.equals(request.clinicId(), clinicId)) {
             throw new SecurityException("Clinic does not have access to this user :: "+request.username());
@@ -48,7 +50,7 @@ public class UserManagementService {
 
         if (RoleName.CLINIC_ADMIN.equals(currentUserRole)) {
             ClinicSubscription subscription =
-                    subscriptionFeatureService.getActiveSubscription(request.clinicId());
+                    subscriptionFeatureService.getActiveSubscription(clinicId);
             if (RoleName.STAFF.equals(request.role())) {
                 subscriptionFeatureService.validateFeature(
                         request.clinicId(),

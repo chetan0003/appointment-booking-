@@ -6,6 +6,8 @@ import com.jfl.appointment.dashboard.dto.LoginRequest;
 import com.jfl.appointment.dashboard.dto.LoginResponse;
 import com.jfl.appointment.entity.AppUser;
 import com.jfl.appointment.entity.ClinicUser;
+import com.jfl.appointment.entity.RoleName;
+import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.AppUserRepository;
 import com.jfl.appointment.repository.ClinicUserRepository;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,13 +37,21 @@ public class AuthService {
                 )
         );
 
-        AppUser user =
-                userRepository
-                        .findByUsername(request.username())
-                        .orElseThrow();
+        AppUser user = userRepository
+                .findByUsername(request.username())
+                .orElseThrow(() ->
+                        new NotFoundException("User not found"));
 
-        ClinicUser clinicUser = clinicUserRepository.findByUser_Id(user.getId()).orElseThrow();
-        Long clinicId = clinicUser.getClinic().getId();
+        boolean isSuperAdmin = user.getRoles().stream()
+                .anyMatch(role ->
+                        role.getName() == RoleName.SUPER_ADMIN
+                );
+
+        Long clinicId = clinicUserRepository
+                .findByUser_Id(user.getId())
+                .map(clinicUser -> clinicUser.getClinic().getId())
+                .orElse(null);
+
         CustomUserDetails userDetails =
                 new CustomUserDetails(user,clinicId);
 
