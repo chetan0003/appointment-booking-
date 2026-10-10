@@ -354,6 +354,7 @@ public class AppointmentAdminController {
 
         AppointmentListItemDto response =
                 appointmentAdminService.cancelAppointment(
+                        requestedClinicId,
                         appointmentId
                 );
 

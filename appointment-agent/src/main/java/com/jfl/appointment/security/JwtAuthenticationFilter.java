@@ -29,7 +29,8 @@ public class JwtAuthenticationFilter
 
         String path = request.getServletPath();
 
-        return path.startsWith("/api/auth/")
+        return path.startsWith("/api/auth/login")
+                || path.equals("/api/auth/2fa/verify-login")
                 || path.startsWith("/api/public/")
                 || path.startsWith("/api/n8n/")
                 || path.equals("/actuator/health")

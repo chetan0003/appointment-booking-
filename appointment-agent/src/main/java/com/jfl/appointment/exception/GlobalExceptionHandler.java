@@ -159,7 +159,7 @@ public class GlobalExceptionHandler {
                 .body(
                         new ApiErrorResponse(
                                 "FORBIDDEN",
-                                "You do not have permission to perform this operation.",
+                                ex.getMessage(),
                                 LocalDateTime.now(),
                                 request.getRequestURI()
                         )

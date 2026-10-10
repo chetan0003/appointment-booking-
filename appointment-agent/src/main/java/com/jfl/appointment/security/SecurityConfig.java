@@ -98,6 +98,11 @@ public class SecurityConfig {
                         .permitAll()
                         .requestMatchers("/api/subscription-plans/**")
                         .permitAll()
+                        .requestMatchers(
+                                "/api/auth/2fa/setup",
+                                "/api/auth/2fa/enable",
+                                "/api/auth/2fa/disable"
+                        ).authenticated()
                         // Public WhatsApp/n8n APIs
                         .requestMatchers(
                                 "/api/clinics/*/services",

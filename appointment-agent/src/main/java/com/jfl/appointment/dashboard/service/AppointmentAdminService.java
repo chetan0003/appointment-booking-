@@ -775,10 +775,10 @@ public class AppointmentAdminService {
      * for a new booking. No separate "release the slot" step needed.
      */
     @Transactional
-    public AppointmentListItemDto cancelAppointment(Long appointmentId) {
+    public AppointmentListItemDto cancelAppointment(Long requestedClinicId,Long appointmentId) {
         log.info("cancelAppointment request for  appointmentId:: {}", appointmentId);
 
-        Long clinicId = securityContextService.getClinicId();
+        Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
 
         Appointment appointment = appointmentRepository.findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() -> new NotFoundException("Appointment not found: " + appointmentId));
