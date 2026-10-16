@@ -5,7 +5,9 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 
 @Entity
@@ -13,7 +15,7 @@ import java.time.LocalTime;
 @Getter
 @Setter
 @NoArgsConstructor
-public class Appointment {
+public class Appointment extends AuditableEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -46,7 +48,31 @@ public class Appointment {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    private BigDecimal amount;
+
+    @Enumerated(EnumType.STRING)
+    private AppointmentPaymentStatus paymentStatus;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AppointmentStatus status = AppointmentStatus.CONFIRMED;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", nullable = true)
+    private PatientSource source;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+            name = "follow_up_of_appointment_id"
+    )
+    private Appointment followUpOfAppointment;
+
+    @Column(name = "suggested_follow_up_date")
+    private LocalDate suggestedFollowUpDate;
+
+    @Column(name = "whatsapp_number")
+    private String whatsappNumber;
+
+    @Column(name = "cancelled_at")
+    private LocalDateTime cancelledAt;
 }

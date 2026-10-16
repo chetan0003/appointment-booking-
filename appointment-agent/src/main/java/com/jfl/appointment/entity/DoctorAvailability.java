@@ -1,0 +1,67 @@
+package com.jfl.appointment.entity;
+
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.DayOfWeek;
+import java.time.LocalTime;
+
+@Entity
+@Table(
+        name = "doctor_availability",
+        indexes = {
+                @Index(
+                        name = "idx_doctor_availability_doctor_day",
+                        columnList = "doctor_id, day_of_week, active"
+                )
+        }
+)
+@Getter
+@Setter
+public class DoctorAvailability {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(
+            name = "doctor_id",
+            nullable = false
+    )
+    private Doctor doctor;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "day_of_week",
+            nullable = false,
+            length = 20
+    )
+    private DayOfWeek dayOfWeek;
+
+    @Column(
+            name = "start_time",
+            nullable = false
+    )
+    private LocalTime startTime;
+
+    @Column(
+            name = "end_time",
+            nullable = false
+    )
+    private LocalTime endTime;
+
+    @Column(name = "break_start_time")
+    private LocalTime breakStartTime;
+
+    @Column(name = "break_end_time")
+    private LocalTime breakEndTime;
+
+    @Column(
+            name = "active",
+            nullable = false
+    )
+    private boolean active = true;
+}

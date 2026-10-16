@@ -130,7 +130,8 @@ public class DashboardAppointmentService {
                 a.getStartTime(),
                 a.getEndTime(),
                 a.getDoctor().getName(),
-                a.getService().getName()
+                a.getService().getName(),
+                null
         );
     }
 }

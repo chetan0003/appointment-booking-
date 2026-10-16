@@ -10,6 +10,7 @@ public record LoginResponse(
         Long userId,
 
         String username,
+        Long clinicId,
 
         List<String> roles
 

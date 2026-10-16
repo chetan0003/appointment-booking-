@@ -1,16 +1,20 @@
 package com.jfl.appointment.dashboard.controller;
 
 
+import com.jfl.appointment.dashboard.dto.ClinicUserDto;
 import com.jfl.appointment.dashboard.dto.CreateUserRequest;
-import com.jfl.appointment.entity.AppUser;
+import com.jfl.appointment.dashboard.dto.UserResponse;
 import com.jfl.appointment.dashboard.service.UserManagementService;
+import com.jfl.appointment.entity.AppUser;
 import jakarta.validation.Valid;
-
 import lombok.RequiredArgsConstructor;
-
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
+@Slf4j
 @RestController
 @RequestMapping("/api/clinic-admin/users")
 @RequiredArgsConstructor
@@ -23,10 +27,26 @@ public class UserManagementController {
         hasAnyRole('SUPER_ADMIN','CLINIC_ADMIN')
     """)
     public AppUser createUser(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @Valid @RequestBody CreateUserRequest request) {
 
         return userManagementService.createUser(
+                requestedClinicId,
                 request
         );
     }
+
+    @GetMapping("/{clinicId}")
+    @PreAuthorize("""
+        hasAnyRole('ROLE_SUPER_ADMIN','SUPER_ADMIN','CLINIC_ADMIN')
+    """)
+    public List<ClinicUserDto> getClinicUser(@PathVariable Long clinicId) {
+        return userManagementService.getClinicUsersByClientId(clinicId);
+    }
+
+
 }

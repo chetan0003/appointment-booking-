@@ -2,6 +2,7 @@ package com.jfl.appointment.n8n.dto;
 
 import com.jfl.appointment.entity.ConversationState;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
@@ -15,5 +16,9 @@ public record SessionResponse(
         LocalDate appointmentDate,
         LocalTime selectedStartTime,
         String patientName,
-        ConversationState state
+        Long patientId,
+        ConversationState state,
+        String sessionCode,
+        Instant codeExpiresAt
+
 ) {}

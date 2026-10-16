@@ -1,0 +1,13 @@
+package com.jfl.appointment.entity;
+
+public enum AppNotificationType {
+
+    APPOINTMENT_CREATED,
+    APPOINTMENT_CONFIRMED,
+    APPOINTMENT_CANCELLED,
+    APPOINTMENT_RESCHEDULED,
+
+    PAYMENT_RECEIVED,
+    SUBSCRIPTION_ACTIVATED,
+    SUBSCRIPTION_EXPIRED
+}
