@@ -2,12 +2,14 @@ package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
-import com.jfl.appointment.dashboard.service.NotificationSchedulingService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.AppointmentRepository;
+import com.jfl.appointment.repository.ClinicQueueEntryRepository;
 import com.jfl.appointment.repository.NotificationRepository;
+import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Slf4j
@@ -34,20 +36,27 @@ public class AppointmentAdminController {
     private final AppointmentAdminService appointmentAdminService;
     private final AppointmentRepository appointmentRepository;
     private final NotificationRepository notificationRepository;
+    private final ClinicQueueEntryRepository queueEntryRepository;
+    private final ClinicContextResolver clinicContextResolver;
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN',
-            'STAFF',
-            'DOCTOR'
-        )
-        """)
-    @PostMapping("/api/dashboard/clinics/{clinicId}/appointments")
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN',
+                'STAFF',
+                'DOCTOR'
+            )
+            """)
+    @PostMapping("/api/dashboard/clinics/appointments")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> createAppointment(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @Valid @RequestBody CreateAppointmentRequest request) {
 
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Creating appointment. clinicId={}, patientId={}, doctorId={}, serviceId={}, date={}",
                 clinicId,
@@ -56,11 +65,11 @@ public class AppointmentAdminController {
                 request.serviceId(),
                 request.appointmentDate()
         );
-
+        CreateAppointmentRequest createAppointmentRequest = request.withSource(PatientSource.DASHBOARD.name());
         AppointmentListItemDto response =
                 appointmentAdminService.createAppointment(
                         clinicId,
-                        request
+                        createAppointmentRequest
                 );
 
         return ResponseEntity
@@ -75,15 +84,20 @@ public class AppointmentAdminController {
 
 
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN',
-            'STAFF',
-            'DOCTOR'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN',
+                'STAFF',
+                'DOCTOR'
+            )
+            """)
     @PostMapping("/api/dashboard/appointments/{appointmentId}/next")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> createNextAppointment(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long appointmentId,
             @Valid @RequestBody CreateNextAppointmentRequest request) {
 
@@ -96,6 +110,7 @@ public class AppointmentAdminController {
 
         AppointmentListItemDto response =
                 appointmentAdminService.createNextAppointment(
+                        requestedClinicId,
                         appointmentId,
                         request
                 );
@@ -120,9 +135,13 @@ public class AppointmentAdminController {
                 'DOCTOR'
             )
             """)
-    @GetMapping("/api/dashboard/clinics/{clinicId}/appointments")
+    @GetMapping("/api/dashboard/clinics/appointments")
     public ResponseEntity<ApiResponse<Page<AppointmentListItemDto>>> listAppointments(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             LocalDate from, @RequestParam(required = false)
@@ -130,6 +149,7 @@ public class AppointmentAdminController {
             LocalDate to, @RequestParam(required = false)
             Long doctorId, @RequestParam(required = false)
             Long serviceId, @RequestParam(required = false)
+            Long appointmentId, @RequestParam(required = false)
             AppointmentStatus status,
             @PageableDefault(size = 5, sort = "appointmentDate", direction = Sort.Direction.ASC)
             Pageable pageable) {
@@ -146,7 +166,8 @@ public class AppointmentAdminController {
 
         Page<AppointmentListItemDto> appointments =
                 appointmentAdminService.listAppointments(
-                        clinicId,
+                        requestedClinicId,
+                        appointmentId,
                         from,
                         to,
                         doctorId,
@@ -176,6 +197,11 @@ public class AppointmentAdminController {
             """)
     @PatchMapping("/api/dashboard/appointments/{appointmentId}/status")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> updateAppointmentStatus(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long appointmentId,
             @RequestBody UpdateAppointmentStatusRequest request) {
 
@@ -184,84 +210,123 @@ public class AppointmentAdminController {
                 appointmentId,
                 request.status()
         );
-
-        // --------------------------------------------------
-        // 1. Find appointment
-        // --------------------------------------------------
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         Appointment appointment = appointmentRepository
-                .findById(appointmentId)
+                .findByIdAndClinicId(appointmentId,clinicId)
                 .orElseThrow(() ->
                         new NotFoundException(
                                 "Appointment not found: " + appointmentId
                         )
                 );
 
-        // --------------------------------------------------
-        // 2. Validate status transition
-        // --------------------------------------------------
-        AppointmentStatus currentStatus =
-                appointment.getStatus();
-
-        AppointmentStatus newStatus =
-                request.status();
-
-//        if (currentStatus != AppointmentStatus.CONFIRMED && newStatus == AppointmentStatus.CANCELLED) {
-//            throw new ConflictException("Only Confirmed Appointment Can Cancelled");
-//        }
+        AppointmentStatus currentStatus = appointment.getStatus();
+        AppointmentStatus newStatus = request.status();
 
         appointmentAdminService.validateStatusTransition(
                 currentStatus,
                 newStatus
         );
 
-        // --------------------------------------------------
-        // 3. Update status
-        // --------------------------------------------------
+        // Synchronize queue lifecycle
+        if (newStatus == AppointmentStatus.WAITING
+                || newStatus == AppointmentStatus.IN_CONSULTATION
+                || newStatus == AppointmentStatus.COMPLETED
+                || newStatus == AppointmentStatus.CANCELLED) {
+
+            ClinicQueueEntry queueEntry =
+                    queueEntryRepository
+                            .findByAppointment_Id(appointmentId)
+                            .orElseThrow(() ->
+                                    new ConflictException(
+                                            "Queue entry not found for appointment: "
+                                                    + appointmentId
+                                    )
+                            );
+
+            switch (newStatus) {
+
+                case WAITING -> queueEntry.setQueueStatus(QueueStatus.WAITING);
+
+                case IN_CONSULTATION -> {
+                    queueEntry.setQueueStatus(
+                            QueueStatus.IN_CONSULTATION
+                    );
+                    queueEntry.setConsultationStartedAt(
+                            LocalDateTime.now()
+                    );
+                }
+
+                case COMPLETED -> {
+                    queueEntry.setQueueStatus(QueueStatus.COMPLETED);
+                    queueEntry.setCompletedAt(LocalDateTime.now());
+                }
+
+                case CANCELLED -> queueEntry.setQueueStatus(QueueStatus.CANCELLED);
+
+                default -> {
+                    // No queue update required
+                }
+            }
+
+            queueEntryRepository.save(queueEntry);
+        }
+
         appointment.setStatus(newStatus);
 
         Appointment savedAppointment =
                 appointmentRepository.save(appointment);
 
-
         Optional<Notification> notification =
                 notificationRepository.findByAppointmentIdAndTypeAndChannel(
-                savedAppointment.getId(), NotificationType.REMINDER_24H, NotificationChannel.WHATSAPP);
-        notification.ifPresent(p-> {
-            p.setStatus(NotificationStatus.SENT);
-        });
-        // --------------------------------------------------
-        // 4. Convert to DTO
-        // --------------------------------------------------
-        AppointmentListItemDto response =
-                toDto(savedAppointment);
-
-        // --------------------------------------------------
-        // 5. Generic API response
-        // --------------------------------------------------
-        return ResponseEntity
-                .ok(
-                        ApiResponse.success(
-                                "Appointment status updated successfully.",
-                                response
-                        )
+                        savedAppointment.getId(),
+                        NotificationType.REMINDER_24H,
+                        NotificationChannel.WHATSAPP
                 );
+
+        notification.ifPresent(p ->
+                p.setStatus(NotificationStatus.SENT)
+        );
+        Optional<ClinicQueueEntry> byAppointmentId = queueEntryRepository.findByAppointment_Id(appointmentId);
+        AppointmentListItemDto response = toDto(savedAppointment, byAppointmentId.get());
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Appointment status updated successfully.",
+                        response
+                )
+        );
     }
 
-    AppointmentListItemDto toDto(Appointment savedAppointment) {
+    AppointmentListItemDto toDto(Appointment savedAppointment, ClinicQueueEntry queueEntry) {
         return new AppointmentListItemDto(savedAppointment.getId(),
                 savedAppointment.getAppointmentCode(),
                 savedAppointment.getAppointmentDate(),
                 savedAppointment.getStartTime(),
                 savedAppointment.getEndTime(),
+                savedAppointment.getAmount(),
+                savedAppointment.getPaymentStatus(),
                 savedAppointment.getStatus(),
                 savedAppointment.getSource() != null ? savedAppointment.getSource().name() : null,
                 savedAppointment.getDoctor().getId(),
+                savedAppointment.getClinic().getName(),
                 savedAppointment.getDoctor().getName(),
                 savedAppointment.getService().getId(),
                 savedAppointment.getService().getName(),
                 savedAppointment.getPatient().getName(),
                 savedAppointment.getPatient().getWhatsappNumber(),
-                savedAppointment.getFollowUpOfAppointment() != null ? savedAppointment.getFollowUpOfAppointment().getId():null, savedAppointment.getSuggestedFollowUpDate());
+                savedAppointment.getFollowUpOfAppointment() != null ? savedAppointment.getFollowUpOfAppointment().getId() : null, savedAppointment.getSuggestedFollowUpDate(),
+                queueEntry != null ? queueEntry.getId() : null,
+                queueEntry != null ? queueEntry.getQueueToken() : null,
+                queueEntry != null ? queueEntry.getQueueNumber() : null,
+                queueEntry != null ? queueEntry.getQueueDate() : null,
+                queueEntry != null ? queueEntry.getQueueStatus() : null,
+                queueEntry != null ? queueEntry.getCheckedInAt() : null,
+                queueEntry != null ? queueEntry.getConsultationStartedAt() : null,
+                queueEntry != null ? queueEntry.getCompletedAt() : null,
+                null,
+                savedAppointment.getCreatedAt(),
+                queueEntry != null ? queueEntry.getCancelledAt() : savedAppointment.getCancelledAt()
+        );
 
     }
 
@@ -275,6 +340,11 @@ public class AppointmentAdminController {
             """)
     @PatchMapping("/api/appointments/{appointmentId}/cancel")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> cancelAppointment(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long appointmentId) {
 
         log.info(
@@ -284,6 +354,7 @@ public class AppointmentAdminController {
 
         AppointmentListItemDto response =
                 appointmentAdminService.cancelAppointment(
+                        requestedClinicId,
                         appointmentId
                 );
 
@@ -308,6 +379,11 @@ public class AppointmentAdminController {
             """)
     @PatchMapping("/api/dashboard/appointments/{appointmentId}/reschedule")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> rescheduleAppointment(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long appointmentId,
             @Valid @RequestBody RescheduleAppointmentRequest request) {
 
@@ -335,15 +411,20 @@ public class AppointmentAdminController {
 
     @Transactional
     @PreAuthorize("""
-        hasAnyRole(
-            'SUPER_ADMIN',
-            'CLINIC_ADMIN',
-            'STAFF',
-            'DOCTOR'
-        )
-        """)
+            hasAnyRole(
+                'SUPER_ADMIN',
+                'CLINIC_ADMIN',
+                'STAFF',
+                'DOCTOR'
+            )
+            """)
     @PatchMapping("/api/dashboard/appointments/{appointmentId}/follow-up")
     public ResponseEntity<ApiResponse<AppointmentListItemDto>> suggestFollowUp(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long appointmentId,
             @Valid @RequestBody FollowUpRequest request) {
 
@@ -364,6 +445,33 @@ public class AppointmentAdminController {
                         "Follow-up date saved successfully.",
                         response
                 )
+        );
+    }
+
+    @DeleteMapping("/api/dashboard/clinics/appointments/{appointmentId}")
+    @PreAuthorize("""
+            hasAnyRole(
+                'SUPER_ADMIN'
+            )
+            """)
+    public ResponseEntity<ApiResponse<Void>> deleteAppointment(
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
+            @PathVariable Long appointmentId) {
+
+        log.info(
+                "Deleting appointment. clinicId={}, appointmentId={}",
+                requestedClinicId,
+                appointmentId
+        );
+
+        appointmentAdminService.deleteAppointment(requestedClinicId, appointmentId);
+
+        return ResponseEntity.ok(
+                ApiResponse.success("Appointment deleted successfully", null)
         );
     }
 }

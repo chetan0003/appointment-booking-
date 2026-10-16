@@ -6,12 +6,14 @@ import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationDispatchService {
@@ -32,6 +34,7 @@ public class NotificationDispatchService {
      */
     @Transactional
     public List<NotificationDueDto> findDue(NotificationChannel channel) {
+        log.info("find due notification ");
         notificationRepository.reclaimStale(LocalDateTime.now().minusMinutes(STALE_DISPATCH_MINUTES));
         notificationRepository.claimDue(channel.name(), LocalDateTime.now());
         List<Notification> claimed = notificationRepository.findClaimed(channel);

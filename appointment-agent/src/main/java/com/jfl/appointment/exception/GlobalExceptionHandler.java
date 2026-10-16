@@ -159,7 +159,7 @@ public class GlobalExceptionHandler {
                 .body(
                         new ApiErrorResponse(
                                 "FORBIDDEN",
-                                "You do not have permission to perform this operation.",
+                                ex.getMessage(),
                                 LocalDateTime.now(),
                                 request.getRequestURI()
                         )
@@ -282,4 +282,90 @@ public class GlobalExceptionHandler {
                         )
                 );
     }
+
+    @ExceptionHandler(SecurityException.class)
+    public ResponseEntity<ApiErrorResponse> handleSecurityError(
+            SecurityException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_ACCEPTABLE)
+                .body(
+                        new ApiErrorResponse(
+                                "NO ACCESS",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiErrorResponse> handleForbiddenError(
+            ForbiddenException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(
+                        new ApiErrorResponse(
+                                "FORBIDDEN",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(DailyBookingLimitException.class)
+    public ResponseEntity<ApiErrorResponse> handleDailyBookingError(
+            DailyBookingLimitException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(
+                        new ApiErrorResponse(
+                                "DAILY_BOOKING_LIMIT",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleIllegalStateError(
+            IllegalStateException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_ACCEPTABLE)
+                .body(
+                        new ApiErrorResponse(
+                                "NOT_ACCEPTABLE",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ApiErrorResponse> handleIllegalStateError(
+            BusinessException ex,
+            HttpServletRequest request) {
+
+        return ResponseEntity
+                .status(HttpStatus.NOT_ACCEPTABLE)
+                .body(
+                        new ApiErrorResponse(
+                                "NOT_ACCEPTABLE",
+                                ex.getMessage(),
+                                LocalDateTime.now(),
+                                request.getRequestURI()
+                        )
+                );
+    }
+
 }

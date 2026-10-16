@@ -43,10 +43,11 @@ public class SubscriptionFeatureService {
 
     public void validateFeature(
             Long clinicId,
+            ClinicSubscription subscription,
             SubscriptionFeature feature) {
 
-        ClinicSubscription subscription =
-                getActiveSubscription(clinicId);
+//        ClinicSubscription subscription =
+//                getActiveSubscription(clinicId);
 
         SubscriptionPlan plan = subscription.getPlan();
 
@@ -82,10 +83,7 @@ public class SubscriptionFeatureService {
     }
 
     public void validateFeatureOnWhats(
-            Long clinicId) {
-
-        ClinicSubscription subscription =
-                getActiveSubscription(clinicId);
+            Long clinicId,ClinicSubscription subscription) {
 
         SubscriptionPlan plan = subscription.getPlan();
 
@@ -119,8 +117,7 @@ public class SubscriptionFeatureService {
                 appointmentRepository.countAppointmentsForPeriod(
                         clinicId,
                         subscription.getStartDate(),
-                        subscription.getEndDate(),
-                        AppointmentStatus.CANCELLED
+                        subscription.getEndDate()
                 );
 
         if (used >= limit) {
@@ -231,6 +228,15 @@ public class SubscriptionFeatureService {
                             + " plan."
             );
         }
+    }
+
+    public boolean isWhatsAppNotificationEnable(
+            SubscriptionPlan plan) {
+
+        if (!plan.isWhatsappEnabled()) {
+            return false;
+        }
+        return true;
     }
 
     private void validateAnalytics(

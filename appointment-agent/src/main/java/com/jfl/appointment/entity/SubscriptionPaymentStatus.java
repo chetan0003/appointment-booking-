@@ -1,6 +1,6 @@
 package com.jfl.appointment.entity;
 
-public enum PaymentStatus {
+public enum SubscriptionPaymentStatus {
     PENDING,
     VERIFIED,
     REJECTED

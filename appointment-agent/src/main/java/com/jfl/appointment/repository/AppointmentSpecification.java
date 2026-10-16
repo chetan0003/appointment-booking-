@@ -17,6 +17,7 @@ public final class AppointmentSpecification {
 
     public static Specification<Appointment> forDashboard(
             Long clinicId,
+            Long appointmentId,
             LocalDate from,
             LocalDate to,
             Long doctorId,
@@ -35,6 +36,14 @@ public final class AppointmentSpecification {
                     )
             );
 
+            if (appointmentId != null) {
+                predicates.add(
+                        cb.equal(
+                                root.get("id"),
+                                appointmentId
+                        )
+                );
+            }
             // Optional date filters
             if (from != null) {
                 predicates.add(

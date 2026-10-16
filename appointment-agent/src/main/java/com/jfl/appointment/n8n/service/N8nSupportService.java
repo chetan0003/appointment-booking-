@@ -8,9 +8,9 @@ import com.jfl.appointment.n8n.dto.IdentifyClinicResponse;
 import com.jfl.appointment.n8n.dto.IdentifyPatientResponse;
 import com.jfl.appointment.repository.*;
 import com.jfl.appointment.service.ClinicQrTokenService;
-import com.jfl.appointment.service.PatientQrService;
 import com.jfl.appointment.service.PatientQrTokenService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
  * The two genuinely new pieces the QR/Twilio flow needed - everything else
  * it calls already existed and is just wrapped by N8nApiController.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class N8nSupportService {
@@ -73,6 +74,7 @@ public class N8nSupportService {
             Long clinicId,
             String token
     ) {
+        log.info("Patient IdentifyByToken :: {}", token);
         if (token == null || token.isBlank()) {
             return new IdentifyPatientResponse(null, null);
         }
@@ -103,6 +105,7 @@ public class N8nSupportService {
             Long clinicId,
             String token
     ) {
+        log.info("Clinic IdentifyByToken :: {}", token);
         if (token == null || token.isBlank()) {
             return new IdentifyClinicResponse(null, null);
         }
@@ -125,6 +128,6 @@ public class N8nSupportService {
                             clinic.getName()
                     );
                 })
-                .orElse(new IdentifyClinicResponse(null, null));
+                .orElseThrow(() -> new NotFoundException("Clinic QR code token is Invalid"));
     }
 }

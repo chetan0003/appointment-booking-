@@ -1,5 +1,6 @@
 package com.jfl.appointment.dashboard.dto;
 
+import com.jfl.appointment.entity.PatientSource;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -13,6 +14,7 @@ public record CreateAppointmentRequest(
         @NotNull Long doctorId,
         @NotNull Long serviceId,
         String patientName,
+        String qrType,
         String whatsappNumber,
         @NotNull LocalDate appointmentDate,
         @NotNull LocalTime startTime,
@@ -23,5 +25,32 @@ public record CreateAppointmentRequest(
         // Optional - if supplied, this conversation_session is marked BOOKED
         // on success, freeing the patient to start a new conversation.
         Long sessionId,
-        Long followUpOfAppointmentId
-) {}
+        // WA
+        String sessionCode,         // WA
+        Long followUpOfAppointmentId,
+        String source
+
+) {
+
+        public CreateAppointmentRequest withSource(String newSource) {
+                return new CreateAppointmentRequest(
+                        clinicId,
+                        patientId,
+                        doctorId,
+                        serviceId,
+                        patientName,
+                        qrType,
+                        whatsappNumber,
+                        appointmentDate,
+                        startTime,
+                        endTime,
+                        idempotencyKey,
+                        sessionId,
+                        sessionCode,
+                        followUpOfAppointmentId,
+                        newSource
+                );
+        }
+
+
+}

@@ -177,8 +177,7 @@ public class ClinicSubscriptionService {
                         .countAppointmentsForPeriod(
                                 subscription.getClinic().getId(),
                                 start,
-                                end,
-                                AppointmentStatus.CANCELLED
+                                end
                         )
         );
     }

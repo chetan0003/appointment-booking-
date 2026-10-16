@@ -35,7 +35,6 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
             SELECT p
             FROM Patient p
             WHERE p.clinic.id = :clinicId
-                AND p.profileStatus <> :profileStatus
               AND (
                     LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%'))
                     OR p.whatsappNumber LIKE CONCAT('%', :query, '%')
@@ -44,8 +43,7 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
             """)
     List<Patient> searchPatients(
             @Param("clinicId") Long clinicId,
-            @Param("query") String query,
-            @Param("profileStatus") PatientProfileStatus profileStatus
+            @Param("query") String query
     );
 
     Page<Patient> findByClinicId(
@@ -56,6 +54,43 @@ public interface PatientRepository extends JpaRepository<Patient, Long> {
     Optional<Patient> findByIdAndClinicId(
             Long id,
             Long clinicId
+    );
+
+    @Query("""
+            SELECT DISTINCT p
+            FROM Patient p
+            JOIN Appointment a ON a.patient.id = p.id
+            WHERE p.clinic.id = :clinicId
+              AND a.clinic.id = :clinicId
+              AND a.doctor.id = :doctorId
+            ORDER BY p.name ASC
+            """)
+    Page<Patient> findPatientsByDoctor(
+            @Param("clinicId") Long clinicId,
+            @Param("doctorId") Long doctorId,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT DISTINCT p
+            FROM Patient p
+            JOIN Appointment a ON a.patient.id = p.id
+            WHERE p.clinic.id = :clinicId
+              AND a.clinic.id = :clinicId
+              AND a.doctor.id = :doctorId
+              AND p.profileStatus = :profileStatus
+              AND (
+                  LOWER(p.name) LIKE LOWER(CONCAT('%', :query, '%'))
+                  OR p.whatsappNumber LIKE CONCAT('%', :query, '%')
+                  OR LOWER(p.email) LIKE LOWER(CONCAT('%', :query, '%'))
+              )
+            ORDER BY p.name ASC
+            """)
+    List<Patient> searchPatientsByDoctor(
+            @Param("clinicId") Long clinicId,
+            @Param("doctorId") Long doctorId,
+            @Param("query") String query,
+            @Param("profileStatus") PatientProfileStatus profileStatus
     );
 
 }

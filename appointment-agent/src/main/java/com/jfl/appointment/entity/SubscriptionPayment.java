@@ -34,7 +34,7 @@ public class SubscriptionPayment extends AuditableEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
-    private PaymentStatus status;
+    private SubscriptionPaymentStatus status;
 
     @Column(name = "payment_date")
     private LocalDateTime paymentDate;

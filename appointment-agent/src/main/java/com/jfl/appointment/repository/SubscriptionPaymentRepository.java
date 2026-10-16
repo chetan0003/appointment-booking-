@@ -1,7 +1,7 @@
 package com.jfl.appointment.repository;
 
 
-import com.jfl.appointment.entity.PaymentStatus;
+import com.jfl.appointment.entity.SubscriptionPaymentStatus;
 import com.jfl.appointment.entity.SubscriptionPayment;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -13,7 +13,7 @@ public interface SubscriptionPaymentRepository
     boolean existsByTransactionId(String transactionId);
 
     List<SubscriptionPayment> findByStatusOrderByCreatedAtDesc(
-            PaymentStatus status
+            SubscriptionPaymentStatus status
     );
 
     List<SubscriptionPayment>
@@ -23,6 +23,6 @@ public interface SubscriptionPaymentRepository
 
     boolean existsBySubscriptionIdAndStatus(
             Long subscriptionId,
-            PaymentStatus status
+            SubscriptionPaymentStatus status
     );
 }

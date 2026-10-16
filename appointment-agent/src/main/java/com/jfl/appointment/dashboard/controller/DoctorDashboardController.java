@@ -1,10 +1,13 @@
 package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
+import com.jfl.appointment.dashboard.service.ClinicAccessService;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
 import com.jfl.appointment.n8n.dto.DoctorDto;
 import com.jfl.appointment.repository.*;
+import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import com.jfl.appointment.service.SubscriptionFeatureService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -24,9 +27,11 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.jfl.appointment.util.Constants.DR_PREFIX;
+
 @RestController
 @Slf4j
-@RequestMapping("/api/dashboard/clinics/{clinicId}/doctors")
+@RequestMapping("/api/dashboard/clinics/doctors")
 @RequiredArgsConstructor
 public class DoctorDashboardController {
 
@@ -37,6 +42,9 @@ public class DoctorDashboardController {
     private final DoctorServiceRepository doctorServiceRepository;
     private final DoctorAvailabilityRepository doctorAvailabilityRepository;
     private final SubscriptionFeatureService subscriptionFeatureService;
+    private final SecurityContextService securityContextService;
+    private final ClinicAccessService clinicAccessService;
+    private final ClinicContextResolver clinicContextResolver;
 
 
     @Transactional
@@ -52,9 +60,13 @@ public class DoctorDashboardController {
             """)
     @PostMapping
     public ResponseEntity<ApiResponse<DoctorDto>> createDoctor(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestBody CreateDoctorRequest request) {
-
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Create Doctor : clinicId -> {}, name -> {}, serviceId -> {}",
                 clinicId,
@@ -62,23 +74,27 @@ public class DoctorDashboardController {
                 request.serviceId()
         );
 
+        ClinicSubscription subscription =
+                subscriptionFeatureService.getActiveSubscription(clinicId);
+
         // --------------------------------------------------
         // 1. Validate Feature
         // --------------------------------------------------
         subscriptionFeatureService.validateFeature(
                 clinicId,
+                subscription,
                 SubscriptionFeature.DOCTORS
         );
         // --------------------------------------------------
         // 1. Validate clinic
         // --------------------------------------------------
-//        Clinic clinic =
-//                clinicRepository.findById(clinicId)
-//                        .orElseThrow(() ->
-//                                new NotFoundException(
-//                                        "Clinic not found: " + clinicId
-//                                )
-//                        );
+        Clinic clinic =
+                clinicRepository.findById(clinicId)
+                        .orElseThrow(() ->
+                                new NotFoundException(
+                                        "Clinic not found: " + clinicId
+                                )
+                        );
 
         // --------------------------------------------------
         // 2. Validate service
@@ -96,12 +112,13 @@ public class DoctorDashboardController {
                                 )
                         );
 
+        // Evict service cache
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
         // --------------------------------------------------
         // 3. Create doctor
         // --------------------------------------------------
         Doctor doctor = new Doctor();
-
-        doctor.setName(request.name());
+        doctor.setName(DR_PREFIX+request.name());
         doctor.setSpecialization(request.specialization());
         doctor.setClinic(clinic);
         doctor.setActive(true);
@@ -157,10 +174,14 @@ public class DoctorDashboardController {
             """)
     @PutMapping("/{doctorId}")
     public ResponseEntity<ApiResponse<DoctorDto>> updateDoctor(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId,
             @RequestBody UpdateDoctorRequest request) {
-
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Update Doctor : clinicId -> {}, doctorId -> {}, serviceId -> {}",
                 clinicId,
@@ -178,7 +199,7 @@ public class DoctorDashboardController {
                                 "Doctor not found: " + doctorId
                         )
                 );
-
+        cacheManager.getCache("clinicDoctors").evict(clinicId);
         // --------------------------------------------------
         // 2. Validate service belongs to same clinic
         // --------------------------------------------------
@@ -259,54 +280,97 @@ public class DoctorDashboardController {
             """)
     @GetMapping
     public ResponseEntity<ApiResponse<List<DoctorDto>>> getDoctors(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @RequestParam(required = false) Long serviceId) {
-
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Get Doctors : clinicId -> {}, serviceId -> {}",
                 clinicId,
                 serviceId
         );
 
-        List<DoctorDto> doctors;
+        RoleName currentUserRole = securityContextService.getCurrentRole();
 
-        if (serviceId == null) {
+        List<Doctor> doctorEntities;
 
-            doctors = doctorRepository
-                    .findByClinicId(clinicId)
-                    .stream()
-                    .map(d -> new DoctorDto(
-                            d.getId(),
-                            d.getName(),
-                            d.getSpecialization(),
-                            d.isActive()
-                    ))
-                    .toList();
+        switch (currentUserRole) {
 
-        } else {
+            case SUPER_ADMIN, CLINIC_ADMIN, STAFF -> {
 
-            doctors = doctorRepository
-                    .findDoctorsByClinicAndServiceForDashboard(
-                            clinicId,
-                            serviceId
-                    )
-                    .stream()
-                    .map(d -> new DoctorDto(
-                            d.getId(),
-                            d.getName(),
-                            d.getSpecialization(),
-                            d.isActive()
-                    ))
-                    .toList();
+                if (serviceId == null) {
+
+                    doctorEntities =
+                            doctorRepository.findByClinicId(clinicId);
+
+                } else {
+
+                    doctorEntities =
+                            doctorRepository
+                                    .findDoctorsByClinicAndServiceForDashboard(
+                                            clinicId,
+                                            serviceId
+                                    );
+                }
+            }
+
+            case DOCTOR -> {
+
+                ClinicUser clinicUser =
+                        clinicAccessService
+                                .getClinicUser(clinicId);
+
+                Long doctorId =
+                        clinicUser.getDoctor().getId();
+
+                if (serviceId == null) {
+
+                    doctorEntities = doctorRepository
+                            .findByClinicId(clinicId)
+                            .stream()
+                            .filter(doctor ->
+                                    doctor.getId().equals(doctorId)
+                            )
+                            .toList();
+
+                } else {
+
+                    doctorEntities = doctorRepository
+                            .findDoctorsByClinicAndServiceForDashboard(
+                                    clinicId,
+                                    serviceId
+                            )
+                            .stream()
+                            .filter(doctor ->
+                                    doctor.getId().equals(doctorId)
+                            )
+                            .toList();
+                }
+            }
+
+            default -> throw new SecurityException(
+                    "You are not authorized to view doctors."
+            );
         }
 
-        return ResponseEntity
-                .ok(
-                        ApiResponse.success(
-                                "Doctors fetched successfully.",
-                                doctors
-                        )
-                );
+        List<DoctorDto> doctors = doctorEntities.stream()
+                .map(d -> new DoctorDto(
+                        d.getId(),
+                        d.getName(),
+                        d.getSpecialization(),
+                        d.isActive()
+                ))
+                .toList();
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Doctors fetched successfully.",
+                        doctors
+                )
+        );
     }
 
     @Transactional
@@ -322,10 +386,14 @@ public class DoctorDashboardController {
             """)
     @PostMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> createOrUpdateAvailability(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId,
             @RequestBody List<CreateDoctorAvailabilityRequest> requests) {
-
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
         log.info(
                 "Create/Update doctor availability. clinicId={}, doctorId={}",
                 clinicId,
@@ -572,8 +640,13 @@ public class DoctorDashboardController {
             """)
     @GetMapping("/{doctorId}/availability")
     public ResponseEntity<ApiResponse<List<DoctorAvailabilityDto>>> getDoctorAvailability(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId) {
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         log.info(
                 "Get doctor availability. clinicId={}, doctorId={}",
@@ -639,8 +712,14 @@ public class DoctorDashboardController {
 
     @DeleteMapping("/{doctorId}/delete")
     public ResponseEntity<ApiResponse<Void>> deleteDoctor(
-            @PathVariable Long clinicId,
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId,
             @PathVariable Long doctorId) {
+
+        Long clinicId = clinicContextResolver.resolveClinicId(requestedClinicId);
 
         Doctor doctor = doctorRepository
                 .findByIdAndClinicId(doctorId, clinicId)

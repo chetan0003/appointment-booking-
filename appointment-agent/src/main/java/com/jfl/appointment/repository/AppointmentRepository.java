@@ -11,7 +11,9 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Collection;
 import java.util.List;
@@ -20,6 +22,7 @@ import java.util.Optional;
 public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
         JpaSpecificationExecutor<Appointment> {
 
+    Optional<Appointment> findByIdAndClinicId(Long appointmentId, Long clinicId);
     List<Appointment> findByDoctorIdAndAppointmentDateAndStatus(
             Long doctorId, LocalDate appointmentDate, AppointmentStatus status);
 
@@ -153,6 +156,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             select count(a) > 0
             from Appointment a
             where a.doctor.id = :doctorId
+              and a.clinic.id = :clinicId
               and a.appointmentDate = :date
               and a.id <> :appointmentId
               and a.status not in (
@@ -164,6 +168,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             """)
     boolean existsConflictForReschedule(
             @Param("doctorId") Long doctorId,
+            @Param("clinicId") Long clinicId,
             @Param("date") LocalDate date,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime,
@@ -219,12 +224,91 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long>,
             WHERE a.clinic.id = :clinicId
               AND a.appointmentDate >= :startDate
               AND a.appointmentDate <= :endDate
-              AND a.status <> :cancelledStatus
             """)
     long countAppointmentsForPeriod(
             @Param("clinicId") Long clinicId,
             @Param("startDate") LocalDate startDate,
-            @Param("endDate") LocalDate endDate,
-            @Param("cancelledStatus") AppointmentStatus cancelledStatus
+            @Param("endDate") LocalDate endDate
+    );
+
+    @Query("""
+            SELECT a
+            FROM Appointment a
+            WHERE a.clinic.id = :clinicId
+              AND a.patient.id = :patientId
+              AND a.doctor.id = :doctorId
+            ORDER BY a.appointmentDate ASC, a.startTime ASC
+            """)
+    Page<Appointment> findPatientAppointmentsByDoctor(
+            @Param("clinicId") Long clinicId,
+            @Param("patientId") Long patientId,
+            @Param("doctorId") Long doctorId,
+            Pageable pageable
+    );
+
+    @Query("""
+            SELECT CASE WHEN COUNT(a) > 0 THEN true ELSE false END
+            FROM Appointment a
+            WHERE a.whatsappNumber = :whatsappNumber
+              AND a.clinic.id = :clinicId
+              AND a.appointmentDate = :appointmentDate
+              AND a.startTime = :startTime
+              AND a.status IN :statuses
+            """)
+    boolean existsDuplicatePhoneSlot(
+            @Param("whatsappNumber") String whatsappNumber,
+            @Param("clinicId") Long clinicId,
+            @Param("appointmentDate") LocalDate appointmentDate,
+            @Param("startTime") LocalTime startTime,
+            @Param("statuses") Collection<AppointmentStatus> statuses
+    );
+
+    boolean existsByWhatsappNumberAndClinic_IdAndAppointmentDateAndStartTimeAndStatusIn(
+            String whatsappNumber,
+            Long clinicId,
+            LocalDate appointmentDate,
+            LocalTime startTime,
+            Collection<AppointmentStatus> statuses
+    );
+
+    /**
+     * Successful bookings created today for this phone + clinic.
+     * Uses createdAt (AuditableEntity) so "3 per calendar day" = jab book kiya, not appointmentDate.
+     */
+    @Query("""
+            SELECT COUNT(a) FROM Appointment a
+            WHERE a.clinic.id = :clinicId
+              AND a.whatsappNumber = :whatsappNumber
+              AND a.status IN :statuses
+              AND a.createdAt >= :startOfDay
+              AND a.createdAt < :endOfDay
+            """)
+    long countSuccessfulCreatedToday(
+            @Param("whatsappNumber") String whatsappNumber,
+            @Param("clinicId") Long clinicId,
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay,
+            @Param("statuses") List<AppointmentStatus> statuses
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Appointment a WHERE a.id = :appointmentId")
+    Optional<Appointment> findByIdForUpdate(
+            @Param("appointmentId") Long appointmentId
+    );
+
+    @Query("""
+            SELECT COUNT(a)
+            FROM Appointment a
+            WHERE a.patient.id = :patientId
+              AND a.clinic.id = :clinicId
+              AND a.appointmentDate = :appointmentDate
+              AND a.status IN :statuses
+            """)
+    int countPatientAppointmentsForDate(
+            @Param("patientId") Long patientId,
+            @Param("clinicId") Long clinicId,
+            @Param("appointmentDate") LocalDate appointmentDate,
+            @Param("statuses") Collection<AppointmentStatus> statuses
     );
 }

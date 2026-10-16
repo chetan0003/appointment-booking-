@@ -6,20 +6,23 @@ import com.jfl.appointment.dto.PaymentResponse;
 import com.jfl.appointment.dto.SubmitPaymentRequest;
 import com.jfl.appointment.dto.VerifyPaymentRequest;
 import com.jfl.appointment.entity.*;
+import com.jfl.appointment.exception.ConflictException;
 import com.jfl.appointment.exception.NotFoundException;
-import com.jfl.appointment.repository.ClinicRepository;
+import com.jfl.appointment.repository.*;
 
-import com.jfl.appointment.repository.ClinicSubscriptionRepository;
-import com.jfl.appointment.repository.SubscriptionPaymentRepository;
-import com.jfl.appointment.repository.SubscriptionPlanRepository;
+import com.jfl.appointment.security.SecurityContextService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -30,6 +33,10 @@ public class SubscriptionPaymentService {
     private final ClinicSubscriptionRepository subscriptionRepository;
     private final ClinicRepository clinicRepository;
     private final ClinicSubscriptionService subscriptionService;
+    private final EmailService emailService;
+    private final SecurityContextService securityContextService;
+    private final AppUserRepository appUserRepository;
+    private final ClinicUserRepository clinicUserRepository;
 
     /**
      * Clinic submits UPI transaction ID / UTR.
@@ -69,7 +76,7 @@ public class SubscriptionPaymentService {
         if (paymentRepository
                 .existsByTransactionId(transactionId)) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Transaction ID has already been submitted."
             );
         }
@@ -114,12 +121,12 @@ public class SubscriptionPaymentService {
                 paymentRepository
                         .existsBySubscriptionIdAndStatus(
                                 subscription.getId(),
-                                PaymentStatus.PENDING
+                                SubscriptionPaymentStatus.PENDING
                         );
 
         if (pendingPaymentExists) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "A payment is already pending verification."
             );
         }
@@ -144,7 +151,7 @@ public class SubscriptionPaymentService {
         payment.setCurrency("INR");
 
         payment.setStatus(
-                PaymentStatus.PENDING
+                SubscriptionPaymentStatus.PENDING
         );
 
         payment.setPaymentDate(
@@ -154,6 +161,19 @@ public class SubscriptionPaymentService {
         SubscriptionPayment saved =
                 paymentRepository.save(payment);
 
+        //send email to admin
+        Optional<AppUser> superadmin = appUserRepository.findByUsername("superadmin");
+        Long createdBy = payment.getCreatedBy();
+        Optional<AppUser> byId = appUserRepository.findById(createdBy);
+        AppUser appUser = superadmin.get();
+        emailService.sendSubscriptionPaymentSubmittedEmail(
+                appUser.getEmail(),
+                appUser.getFirstName(),
+                byId.get().getFirstName(),
+                clinic.getName(),
+                plan.getName(),
+                request.transactionId(),
+                payment.getAmount());
         return toResponse(saved);
     }
 
@@ -174,9 +194,9 @@ public class SubscriptionPaymentService {
                                 ));
 
         if (payment.getStatus()
-                != PaymentStatus.PENDING) {
+                != SubscriptionPaymentStatus.PENDING) {
 
-            throw new IllegalStateException(
+            throw new ConflictException(
                     "Payment has already been processed."
             );
         }
@@ -192,7 +212,7 @@ public class SubscriptionPaymentService {
              * PAYMENT VERIFIED
              */
             payment.setStatus(
-                    PaymentStatus.VERIFIED
+                    SubscriptionPaymentStatus.VERIFIED
             );
 
             payment.setVerifiedAt(
@@ -207,14 +227,27 @@ public class SubscriptionPaymentService {
             subscriptionService.activateSubscription(
                     subscription
             );
+            Long paymentSubmitterId = payment.getCreatedBy();
 
+            appUserRepository.findById(paymentSubmitterId)
+                    .ifPresentOrElse(
+                            appUser -> emailService.sendSubscriptionActivatedEmail(
+                                    appUser.getEmail(),
+                                    appUser.getFirstName(),
+                                    subscription.getClinic().getName(),
+                                    subscription.getPlan().getName(),
+                                    LocalDate.now(),
+                                    LocalDate.now().plusDays(30)
+                            ),
+                            () -> log.warn("AppUser not found for id: {}", paymentSubmitterId)
+                    );
         } else {
 
             /*
              * PAYMENT REJECTED
              */
             payment.setStatus(
-                    PaymentStatus.REJECTED
+                    SubscriptionPaymentStatus.REJECTED
             );
 
             payment.setVerifiedAt(
@@ -228,6 +261,22 @@ public class SubscriptionPaymentService {
             subscription.setStatus(
                     SubscriptionStatus.PENDING
             );
+
+            Long paymentSubmitterId = payment.getCreatedBy();
+
+            appUserRepository.findById(paymentSubmitterId)
+                    .ifPresentOrElse(
+                            appUser -> emailService.sendSubscriptionPaymentRejectedEmail(
+                                    appUser.getEmail(),
+                                    appUser.getFirstName(),
+                                    subscription.getClinic().getName(),
+                                    subscription.getPlan().getName(),
+                                    payment.getTransactionId(),
+                                    payment.getAmount(),
+                                    request.rejectionReason()
+                            ),
+                            () -> log.warn("AppUser not found for id: {}", paymentSubmitterId)
+                    );
         }
 
         return toResponse(payment);
@@ -242,7 +291,7 @@ public class SubscriptionPaymentService {
 
         return paymentRepository
                 .findByStatusOrderByCreatedAtDesc(
-                        PaymentStatus.PENDING
+                        SubscriptionPaymentStatus.PENDING
                 )
                 .stream()
                 .map(this::toResponse)
@@ -292,10 +341,14 @@ public class SubscriptionPaymentService {
 
         SubscriptionPlan plan =
                 subscription.getPlan();
-
+        Long createdBy = payment.getCreatedBy();
+        Optional<AppUser> byId = appUserRepository.findById(createdBy);
+        String submittedBy = byId.get().getFirstName() + " " + byId.get().getLastName();
         return new PaymentResponse(
                 payment.getId(),
                 subscription.getClinic().getId(),
+                subscription.getClinic().getName(),
+                submittedBy,
                 subscription.getId(),
                 plan.getId(),
                 plan.getName(),

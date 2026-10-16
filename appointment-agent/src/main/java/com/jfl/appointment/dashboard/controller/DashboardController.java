@@ -5,11 +5,13 @@ import com.jfl.appointment.dashboard.dto.ApiResponse;
 import com.jfl.appointment.dashboard.dto.WeeklyAppointmentDto;
 import com.jfl.appointment.dashboard.service.AppointmentAdminService;
 import com.jfl.appointment.dashboard.service.DashboardService;
+import com.jfl.appointment.security.SecurityContextService;
+import com.jfl.appointment.service.ClinicContextResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,8 +24,10 @@ public class DashboardController {
 
     private final DashboardService dashboardService;
     private final AppointmentAdminService appointmentAdminService;
+    private final SecurityContextService securityContextService;
+    private final ClinicContextResolver contextResolver;
 
-    @GetMapping("/{clinicId}")
+    @GetMapping
     @PreAuthorize("""
         hasAnyRole(
             'SUPER_ADMIN',
@@ -33,15 +37,20 @@ public class DashboardController {
         )
     """)
     public ApiDashboardResponse.DashboardResponse getDashboard(
-            @PathVariable Long clinicId) {
-
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId
+    ) {
+        Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
         return dashboardService.getDashboard(
                 clinicId
         );
     }
 
     @GetMapping(
-            "/clinics/{clinicId}/appointments-this-week"
+            "/clinics/appointments-this-week"
     )
     @PreAuthorize("""
         hasAnyRole(
@@ -53,8 +62,13 @@ public class DashboardController {
     """)
     public ResponseEntity<ApiResponse<List<WeeklyAppointmentDto>>>
     getAppointmentsThisWeek(
-            @PathVariable Long clinicId) {
-
+            @RequestHeader(
+                    value = "X-Clinic-Id",
+                    required = false
+            )
+            Long requestedClinicId
+    ) {
+        Long clinicId = contextResolver.resolveClinicId(requestedClinicId);
         List<WeeklyAppointmentDto> response =
                 appointmentAdminService
                         .getAppointmentsThisWeek(clinicId);
