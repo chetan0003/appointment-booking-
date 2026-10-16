@@ -1,5 +1,8 @@
 package com.jfl.appointment.n8n.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.jfl.appointment.policy.entity.PolicyCategory;
+import com.jfl.appointment.policy.service.ClinicPolicyResolver;
 import com.jfl.appointment.util.SlotUtil;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
@@ -10,10 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -45,6 +45,7 @@ public class AvailabilityService {
     private final DoctorLeaveRepository doctorLeaveRepository;
     private final ClinicHolidayRepository clinicHolidayRepository;
     private final DoctorAvailabilityRepository doctorAvailabilityRepository;
+    private final ClinicPolicyResolver appointmentPolicyService;
 
 //    @Transactional(readOnly = true)
 //    public AvailabilityResponse getAvailability(Long clinicId, Long doctorId, Long serviceId, LocalDate date) {
@@ -133,9 +134,31 @@ public class AvailabilityService {
                 .withNano(0);
 
         // --------------------------------------------------
-        // 2. Past date -> no availability
+        // 1b. Minimum notice (same config as booking validation)
         // --------------------------------------------------
-        if (date.isBefore(today)) {
+        int minimumNoticeMinutes = 0;
+        try {
+            JsonNode config = appointmentPolicyService.getActivePolicy(clinicId, PolicyCategory.APPOINTMENT);
+            // adapt method name if different, e.g. getConfig(clinicId)
+            if (config != null) {
+                minimumNoticeMinutes = config.path("minimumNoticeMinutes").asInt(0);
+            }
+        } catch (Exception ignored) {
+            // config missing → treat as 0
+        }
+
+        LocalDateTime earliestDateTime = LocalDateTime.now(zoneId)
+                .plusMinutes(minimumNoticeMinutes)
+                .withSecond(0)
+                .withNano(0);
+
+        LocalDate earliestDate = earliestDateTime.toLocalDate();
+        LocalTime earliestTime = earliestDateTime.toLocalTime();
+
+        // --------------------------------------------------
+        // 2. Past date / before earliest bookable day → no slots
+        // --------------------------------------------------
+        if (date.isBefore(today) || date.isBefore(earliestDate)) {
             return List.of();
         }
 
@@ -171,7 +194,6 @@ public class AvailabilityService {
                         .orElse(null);
 
         if (clinicHours == null) {
-            // Clinic is closed on this day
             return List.of();
         }
 
@@ -187,12 +209,11 @@ public class AvailabilityService {
                         .orElse(null);
 
         if (doctorAvailability == null) {
-            // Doctor doesn't work on this day
             return List.of();
         }
 
         // --------------------------------------------------
-        // 7. Calculate effective doctor working window
+        // 7. Effective working window
         // --------------------------------------------------
         LocalTime startTime = SlotUtil.max(
                 clinicHours.getStartTime(),
@@ -204,13 +225,12 @@ public class AvailabilityService {
                 doctorAvailability.getEndTime()
         );
 
-        // Doctor availability doesn't overlap clinic hours
         if (!startTime.isBefore(endTime)) {
             return List.of();
         }
 
         // --------------------------------------------------
-        // 8. Get doctor leaves for this date
+        // 8. Doctor leaves
         // --------------------------------------------------
         List<DoctorLeave> doctorLeaves =
                 doctorLeaveRepository
@@ -220,7 +240,7 @@ public class AvailabilityService {
                         );
 
         // --------------------------------------------------
-        // 9. Get existing appointments
+        // 9. Existing appointments
         // --------------------------------------------------
         List<Appointment> existingAppointments =
                 appointmentRepository
@@ -240,15 +260,6 @@ public class AvailabilityService {
 
         // --------------------------------------------------
         // 11. Slot interval
-        //
-        // Example:
-        // Service duration = 45 minutes
-        // Slot interval    = 30 minutes
-        //
-        // Slots:
-        // 09:00 -> 09:45
-        // 09:30 -> 10:15
-        // 10:00 -> 10:45
         // --------------------------------------------------
         final int slotIntervalMinutes = 30;
 
@@ -262,9 +273,7 @@ public class AvailabilityService {
         while (!cursor.plusMinutes(durationMinutes).isAfter(endTime)) {
 
             LocalTime slotStart = cursor;
-
-            LocalTime slotEnd =
-                    slotStart.plusMinutes(durationMinutes);
+            LocalTime slotEnd = slotStart.plusMinutes(durationMinutes);
 
             // --------------------------------------------------
             // 13. Clinic break
@@ -317,22 +326,16 @@ public class AvailabilityService {
                             );
 
             // --------------------------------------------------
-            // 17. Current/past slot
+            // 17. Too soon: past / now / within minimum notice
             //
-            // If current time is 12:00:
-            //
-            // 11:30 -> excluded
-            // 12:00 -> excluded
-            // 12:30 -> allowed
-            //
-            // If current time is 12:17:
-            //
-            // 12:00 -> excluded
-            // 12:30 -> allowed
+            // minimumNoticeMinutes = 60, now = 15:10 → earliest = 16:10
+            //   15:30 → excluded
+            //   16:00 → excluded
+            //   16:30 → allowed
             // --------------------------------------------------
-            boolean currentOrPastSlot =
-                    date.equals(today)
-                            && !slotStart.isAfter(now);
+            boolean tooSoon =
+                    date.isBefore(earliestDate)
+                            || (date.isEqual(earliestDate) && slotStart.isBefore(earliestTime));
 
             // --------------------------------------------------
             // 18. Final availability check
@@ -341,22 +344,262 @@ public class AvailabilityService {
                     && !overlapsDoctorBreak
                     && !overlapsDoctorLeave
                     && !alreadyBooked
-                    && !currentOrPastSlot) {
+                    && !tooSoon) {
 
                 slots.add(slotStart);
             }
 
             // --------------------------------------------------
-            // 19. Move to next slot
-            //
-            // IMPORTANT:
-            // Move by slot interval, not service duration.
+            // 19. Next slot (by interval, not duration)
             // --------------------------------------------------
             cursor = cursor.plusMinutes(slotIntervalMinutes);
         }
 
         return slots;
     }
+
+//    public List<LocalTime> computeSlots(
+//            Long clinicId,
+//            Doctor doctor,
+//            ServiceOffering service,
+//            LocalDate date) {
+//
+//        // --------------------------------------------------
+//        // 1. Clinic timezone
+//        // --------------------------------------------------
+//        ZoneId zoneId = ZoneId.of("Asia/Kolkata");
+//
+//        LocalDate today = LocalDate.now(zoneId);
+//
+//        LocalTime now = LocalTime.now(zoneId)
+//                .withSecond(0)
+//                .withNano(0);
+//
+//        // --------------------------------------------------
+//        // 2. Past date -> no availability
+//        // --------------------------------------------------
+//        if (date.isBefore(today)) {
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 3. Get day of week
+//        // --------------------------------------------------
+//        DayOfWeek dayOfWeek = date.getDayOfWeek();
+//
+//        // --------------------------------------------------
+//        // 4. Check clinic holiday
+//        // --------------------------------------------------
+//        boolean clinicHoliday =
+//                clinicHolidayRepository
+//                        .findByClinicIdAndHolidayDateAndActiveTrue(
+//                                clinicId,
+//                                date
+//                        )
+//                        .isPresent();
+//
+//        if (clinicHoliday) {
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 5. Get clinic working hours
+//        // --------------------------------------------------
+//        ClinicWorkingHours clinicHours =
+//                workingHoursRepository
+//                        .findByClinic_IdAndDayOfWeekAndActiveTrue(
+//                                clinicId,
+//                                dayOfWeek
+//                        )
+//                        .orElse(null);
+//
+//        if (clinicHours == null) {
+//            // Clinic is closed on this day
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 6. Get doctor availability
+//        // --------------------------------------------------
+//        DoctorAvailability doctorAvailability =
+//                doctorAvailabilityRepository
+//                        .findByDoctorIdAndDayOfWeekAndActiveTrue(
+//                                doctor.getId(),
+//                                dayOfWeek
+//                        )
+//                        .orElse(null);
+//
+//        if (doctorAvailability == null) {
+//            // Doctor doesn't work on this day
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 7. Calculate effective doctor working window
+//        // --------------------------------------------------
+//        LocalTime startTime = SlotUtil.max(
+//                clinicHours.getStartTime(),
+//                doctorAvailability.getStartTime()
+//        );
+//
+//        LocalTime endTime = SlotUtil.min(
+//                clinicHours.getEndTime(),
+//                doctorAvailability.getEndTime()
+//        );
+//
+//        // Doctor availability doesn't overlap clinic hours
+//        if (!startTime.isBefore(endTime)) {
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 8. Get doctor leaves for this date
+//        // --------------------------------------------------
+//        List<DoctorLeave> doctorLeaves =
+//                doctorLeaveRepository
+//                        .findByDoctorIdAndLeaveDateAndActiveTrue(
+//                                doctor.getId(),
+//                                date
+//                        );
+//
+//        // --------------------------------------------------
+//        // 9. Get existing appointments
+//        // --------------------------------------------------
+//        List<Appointment> existingAppointments =
+//                appointmentRepository
+//                        .findByDoctorIdAndAppointmentDate(
+//                                doctor.getId(),
+//                                date
+//                        );
+//
+//        // --------------------------------------------------
+//        // 10. Service duration
+//        // --------------------------------------------------
+//        Integer durationMinutes = service.getDurationMinutes();
+//
+//        if (durationMinutes == null || durationMinutes <= 0) {
+//            return List.of();
+//        }
+//
+//        // --------------------------------------------------
+//        // 11. Slot interval
+//        //
+//        // Example:
+//        // Service duration = 45 minutes
+//        // Slot interval    = 30 minutes
+//        //
+//        // Slots:
+//        // 09:00 -> 09:45
+//        // 09:30 -> 10:15
+//        // 10:00 -> 10:45
+//        // --------------------------------------------------
+//        final int slotIntervalMinutes = 30;
+//
+//        // --------------------------------------------------
+//        // 12. Generate slots
+//        // --------------------------------------------------
+//        List<LocalTime> slots = new ArrayList<>();
+//
+//        LocalTime cursor = startTime;
+//
+//        while (!cursor.plusMinutes(durationMinutes).isAfter(endTime)) {
+//
+//            LocalTime slotStart = cursor;
+//
+//            LocalTime slotEnd =
+//                    slotStart.plusMinutes(durationMinutes);
+//
+//            // --------------------------------------------------
+//            // 13. Clinic break
+//            // --------------------------------------------------
+//            boolean overlapsClinicBreak =
+//                    SlotUtil.overlaps(
+//                            slotStart,
+//                            slotEnd,
+//                            clinicHours.getBreakStartTime(),
+//                            clinicHours.getBreakEndTime()
+//                    );
+//
+//            // --------------------------------------------------
+//            // 14. Doctor break
+//            // --------------------------------------------------
+//            boolean overlapsDoctorBreak =
+//                    SlotUtil.overlaps(
+//                            slotStart,
+//                            slotEnd,
+//                            doctorAvailability.getBreakStartTime(),
+//                            doctorAvailability.getBreakEndTime()
+//                    );
+//
+//            // --------------------------------------------------
+//            // 15. Doctor leave
+//            // --------------------------------------------------
+//            boolean overlapsDoctorLeave =
+//                    doctorLeaves.stream()
+//                            .anyMatch(leave ->
+//                                    SlotUtil.overlaps(
+//                                            slotStart,
+//                                            slotEnd,
+//                                            leave.getStartTime(),
+//                                            leave.getEndTime()
+//                                    )
+//                            );
+//
+//            // --------------------------------------------------
+//            // 16. Existing appointment
+//            // --------------------------------------------------
+//            boolean alreadyBooked =
+//                    existingAppointments.stream()
+//                            .anyMatch(appointment ->
+//                                    SlotUtil.overlaps(
+//                                            slotStart,
+//                                            slotEnd,
+//                                            appointment.getStartTime(),
+//                                            appointment.getEndTime()
+//                                    )
+//                            );
+//
+//            // --------------------------------------------------
+//            // 17. Current/past slot
+//            //
+//            // If current time is 12:00:
+//            //
+//            // 11:30 -> excluded
+//            // 12:00 -> excluded
+//            // 12:30 -> allowed
+//            //
+//            // If current time is 12:17:
+//            //
+//            // 12:00 -> excluded
+//            // 12:30 -> allowed
+//            // --------------------------------------------------
+//            boolean currentOrPastSlot =
+//                    date.equals(today)
+//                            && !slotStart.isAfter(now);
+//
+//            // --------------------------------------------------
+//            // 18. Final availability check
+//            // --------------------------------------------------
+//            if (!overlapsClinicBreak
+//                    && !overlapsDoctorBreak
+//                    && !overlapsDoctorLeave
+//                    && !alreadyBooked
+//                    && !currentOrPastSlot) {
+//
+//                slots.add(slotStart);
+//            }
+//
+//            // --------------------------------------------------
+//            // 19. Move to next slot
+//            //
+//            // IMPORTANT:
+//            // Move by slot interval, not service duration.
+//            // --------------------------------------------------
+//            cursor = cursor.plusMinutes(slotIntervalMinutes);
+//        }
+//
+//        return slots;
+//    }
 
 //    public List<LocalTime> computeSlots(Long clinicId, Doctor doctor, ServiceOffering service, LocalDate date) {
 //        ClinicWorkingHours hours = workingHoursRepository

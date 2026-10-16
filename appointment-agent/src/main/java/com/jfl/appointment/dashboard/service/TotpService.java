@@ -3,6 +3,7 @@ package com.jfl.appointment.dashboard.service;
 
 import com.jfl.appointment.repository.AppUserRepository;
 import com.jfl.appointment.repository.LoginChallengeRepository;
+import com.jfl.appointment.util.Constants;
 import com.warrenstrange.googleauth.GoogleAuthenticator;
 import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +36,7 @@ public class TotpService {
             String username,
             String secret
     ) {
-        String issuer = "Hola MD";
+        String issuer = Constants.HOLA_MD;
 
         return "otpauth://totp/"
                 + urlEncode(issuer + ":" + username)

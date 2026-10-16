@@ -3,7 +3,6 @@ package com.jfl.appointment.dashboard.controller;
 
 import com.jfl.appointment.dashboard.dto.*;
 import com.jfl.appointment.security.AuthService;
-import com.jfl.appointment.security.CustomUserDetails;
 import com.jfl.appointment.security.SecurityContextService;
 import jakarta.validation.Valid;
 
@@ -49,7 +48,7 @@ public class AuthController {
     }
 
     @PostMapping("/2fa/setup")
-    //@PreAuthorize("isAuthenticated()")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TotpSetupResponse> setupTotp() {
 
         Long userId = securityContextService.getCurrentUserId();

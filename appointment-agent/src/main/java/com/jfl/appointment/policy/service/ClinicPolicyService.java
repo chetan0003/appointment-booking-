@@ -32,7 +32,7 @@ public class ClinicPolicyService {
 
     private final ClinicPolicyValidator validator;
 
-    private final ObjectMapper objectMapper;
+    private final PolicyCacheService policyCacheService;
 
     @Transactional(readOnly = true)
     public List<ClinicPolicyResponse> getPolicies(Long clinicId) {
@@ -143,7 +143,7 @@ public class ClinicPolicyService {
                 request.policyConfig().deepCopy()
         );
         //policy.setUpdatedBy(username);
-
+        policyCacheService.evictPolicy(clinicId,request.category());
         return toResponse(policyRepository.save(policy));
     }
 
@@ -152,7 +152,7 @@ public class ClinicPolicyService {
             Long policyId) {
 
         ClinicPolicy policy = getEntity(clinicId, policyId);
-
+        policyCacheService.evictPolicy(clinicId,policy.getCategory());
         return validator.validate(
                 policy.getCategory(),
                 policy.getPolicyConfig()
@@ -166,7 +166,7 @@ public class ClinicPolicyService {
             String reason) {
 
         ClinicPolicy policy = getEntity(clinicId, policyId);
-
+        policyCacheService.evictPolicy(clinicId,policy.getCategory());
         PolicyValidationResponse validation =
                 validator.validate(
                         policy.getCategory(),
@@ -210,7 +210,7 @@ public class ClinicPolicyService {
         policy.setEffectiveFrom(OffsetDateTime.now());
         policy.setEffectiveTo(null);
         //policy.setUpdatedBy(username);
-
+        policyCacheService.evictPolicy(clinicId,policy.getCategory());
         return toResponse(policyRepository.save(policy));
     }
 
@@ -273,7 +273,7 @@ public class ClinicPolicyService {
         policy.setStatus(PolicyStatus.INACTIVE);
         policy.setEffectiveTo(OffsetDateTime.now());
         //policy.setUpdatedBy(username);
-
+        policyCacheService.evictPolicy(clinicId,policy.getCategory());
         policyRepository.save(policy);
     }
 

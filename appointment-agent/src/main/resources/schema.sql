@@ -674,3 +674,9 @@ CREATE TABLE IF NOT EXISTS clinic_queue_counter (
     CONSTRAINT uq_clinic_queue_counter
         UNIQUE (clinic_id, queue_date)
 );
+
+
+ALTER TABLE app_user
+    ADD COLUMN IF NOT EXISTS totp_secret TEXT,
+    ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS pending_totp_secret TEXT;

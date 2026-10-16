@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class AppointmentPolicyService {
 
-    private final ClinicPolicyResolver policyResolver;
+    private final PolicyCacheService policyCacheService;
 
     /**
      * CREATE APPOINTMENT VALIDATION
@@ -26,7 +26,7 @@ public class AppointmentPolicyService {
             LocalDateTime appointmentDateTime,
             int existingAppointmentsToday) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         validateBookingMode(config, "ONLINE");
 
@@ -54,7 +54,7 @@ public class AppointmentPolicyService {
             LocalDateTime appointmentDateTime,
             int existingAppointmentsToday) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         if (!config.path("allowWalkIns").asBoolean(false)) {
             throw new BusinessException(
@@ -82,7 +82,7 @@ public class AppointmentPolicyService {
             LocalDateTime newAppointmentDateTime,
             int existingAppointmentsOnNewDate) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         if (!config.path("allowRescheduling").asBoolean(false)) {
             throw new BusinessException(
@@ -127,7 +127,7 @@ public class AppointmentPolicyService {
             Long clinicId,
             LocalDateTime appointmentDateTime) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         if (!config.path("allowCancellation").asBoolean(false)) {
             throw new BusinessException(
@@ -158,7 +158,7 @@ public class AppointmentPolicyService {
             LocalDateTime followUpDateTime,
             int existingAppointmentsToday) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         validateMinimumNotice(
                 config,
@@ -183,7 +183,7 @@ public class AppointmentPolicyService {
             Long clinicId,
             LocalDateTime appointmentDateTime) {
 
-        JsonNode config = getAppointmentPolicy(clinicId);
+        JsonNode config = policyCacheService.getAppointmentPolicy(clinicId,PolicyCategory.APPOINTMENT);
 
         int noShowAfterMinutes =
                 config.path("noShowAfterMinutes").asInt(15);
@@ -204,13 +204,13 @@ public class AppointmentPolicyService {
      * COMMON VALIDATION METHODS
      */
 
-    private JsonNode getAppointmentPolicy(Long clinicId) {
-
-        return policyResolver.getActivePolicy(
-                clinicId,
-                PolicyCategory.APPOINTMENT
-        );
-    }
+//    private JsonNode getAppointmentPolicy(Long clinicId,PolicyCategory policyCategory) {
+//
+//        return policyCacheService.getActivePolicy(
+//                clinicId,
+//                policyCategory
+//        );
+//    }
 
     private void validateBookingMode(
             JsonNode config,

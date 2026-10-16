@@ -6,8 +6,6 @@ import com.jfl.appointment.n8n.dto.SessionResponse;
 import com.jfl.appointment.n8n.dto.UpdateSessionRequest;
 import com.jfl.appointment.entity.*;
 import com.jfl.appointment.exception.NotFoundException;
-import com.jfl.appointment.policy.entity.PolicyCategory;
-import com.jfl.appointment.policy.service.ClinicPolicyResolver;
 import com.jfl.appointment.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,7 +33,7 @@ public class ConversationSessionService {
     private final PatientRepository patientRepository;
     private final AppointmentRepository appointmentRepository;
     private final ConfigProperties configProperties;
-    private final ClinicPolicyResolver policyResolver;
+    private final BookingAttemptRepository bookingAttemptRepository;
 
 
 
@@ -108,10 +106,10 @@ public class ConversationSessionService {
         return sb.toString();
     }
 
-    private void assignSessionCode(ConversationSession session) {
-        session.setSessionCode(generateSessionCode());
-        session.setCodeExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES));
-    }
+//    private void assignSessionCode(ConversationSession session) {
+//        session.setSessionCode(generateSessionCode());
+//        session.setCodeExpiresAt(Instant.now().plus(30, ChronoUnit.MINUTES));
+//    }
 
     @Transactional
     public SessionResponse findOrCreateActiveSession(
@@ -120,8 +118,8 @@ public class ConversationSessionService {
             Long patientId,
             String source) {
 
-        log.info("Get Session for WhatsApp Number : {}",whatsappNumber);
-        //policyResolver.getActivePolicy(clinicId, PolicyCategory.APPOINTMENT);
+        log.info("Get Session for WhatsApp Number : {}", whatsappNumber);
+
         List<ConversationState> terminalStates = List.of(
                 ConversationState.BOOKED,
                 ConversationState.ABANDONED
@@ -132,115 +130,141 @@ public class ConversationSessionService {
                         whatsappNumber, terminalStates);
 
         String src = source == null ? "" : source.trim();
-        int sessionTtlMinutes = configProperties.booking().sessionTtlMinutes(); // 30
+        int sessionTtlMinutes = configProperties.booking().sessionTtlMinutes();
 
-        // -------------------------------------------------------------------------
-        // CLINIC QR
-        // -------------------------------------------------------------------------
         if ("CLINIC".equalsIgnoreCase(src) && clinicId != null) {
+            return createOrReuseClinicSession(
+                    clinicId, whatsappNumber, activeSession, sessionTtlMinutes);
+        }
 
-            assertDailySuccessLimitOrThrow(clinicId, whatsappNumber);
+        if ("PATIENT".equalsIgnoreCase(src) && patientId != null && clinicId != null) {
+            return createPatientSession(
+                    clinicId, patientId, whatsappNumber, activeSession, sessionTtlMinutes);
+        }
 
-            if (activeSession.isPresent()) {
-                ConversationSession existing = activeSession.get();
+        return resumeOngoingSession(whatsappNumber, activeSession, sessionTtlMinutes);
+    }
 
-                if (existing.getClinic() != null
-                        && clinicId.equals(existing.getClinic().getId())
-                        && existing.getPatient() == null) {
+    // -------------------------------------------------------------------------
+// CLINIC QR
+// -------------------------------------------------------------------------
+    private SessionResponse createOrReuseClinicSession(
+            Long clinicId,
+            String whatsappNumber,
+            Optional<ConversationSession> activeSession,
+            int sessionTtlMinutes) {
 
-                    // Idle / expired session → abandon and create fresh below
-                    if (isSessionExpired(existing, sessionTtlMinutes)) {
-                        existing.setState(ConversationState.ABANDONED);
-                        existing.setSessionCode(null);
-                        existing.setCodeExpiresAt(null);
-                        sessionRepository.save(existing);
-                    } else {
-                        // Reuse: refresh code if missing or expired
-                        if (existing.getSessionCode() == null
-                                || existing.getCodeExpiresAt() == null
-                                || existing.getCodeExpiresAt().isBefore(Instant.now())) {
-                            assignSessionCode(existing, sessionTtlMinutes);
-                            sessionRepository.save(existing);
-                        }
-                        return toResponse(existing);
-                    }
-                } else {
-                    existing.setState(ConversationState.ABANDONED);
-                    existing.setSessionCode(null);
-                    existing.setCodeExpiresAt(null);
-                    sessionRepository.save(existing);
-                }
+        log.info("Clinic session clinicId={} whatsapp={}", clinicId, whatsappNumber);
+
+        assertDailySuccessLimitOrThrow(clinicId, whatsappNumber);
+        assertAttemptRateLimit(clinicId, whatsappNumber);
+
+        if (activeSession.isPresent()) {
+            ConversationSession existing = activeSession.get();
+            boolean sameClinicWalkIn = existing.getClinic() != null
+                    && clinicId.equals(existing.getClinic().getId())
+                    && existing.getPatient() == null;
+
+            if (sameClinicWalkIn && !isSessionExpired(existing, sessionTtlMinutes)) {
+                log.info("Reusing active clinic session id={}", existing.getId());
+                refreshSessionCodeIfNeeded(existing, sessionTtlMinutes);
+                return toResponse(existing);
             }
 
-            Clinic clinic = clinicRepository.findById(clinicId)
-                    .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
-
-            ConversationSession newSession = new ConversationSession();
-            newSession.setClinic(clinic);
-            newSession.setPatient(null);
-            newSession.setWhatsappNumber(whatsappNumber);
-            newSession.setState(ConversationState.STARTED);
-            assignSessionCode(newSession, sessionTtlMinutes);
-            return toResponse(sessionRepository.save(newSession));
+            abandonSession(existing);
         }
 
-        // -------------------------------------------------------------------------
-        // PATIENT QR
-        // -------------------------------------------------------------------------
-        if ("PATIENT".equalsIgnoreCase(src) && patientId != null && clinicId != null) {
+        Clinic clinic = clinicRepository.findById(clinicId)
+                .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
 
-            assertDailySuccessLimitOrThrow(clinicId, whatsappNumber);
+        ConversationSession session = new ConversationSession();
+        session.setClinic(clinic);
+        session.setPatient(null);
+        session.setWhatsappNumber(whatsappNumber);
+        session.setState(ConversationState.STARTED);
+        assignSessionCode(session, sessionTtlMinutes);
 
-            activeSession.ifPresent(existing -> {
-                existing.setState(ConversationState.ABANDONED);
-                existing.setSessionCode(null);
-                existing.setCodeExpiresAt(null);
-                sessionRepository.save(existing);
-            });
+        return toResponse(sessionRepository.save(session));
+    }
 
-            Clinic clinic = clinicRepository.findById(clinicId)
-                    .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
-            Patient patient = patientRepository.findById(patientId)
-                    .orElseThrow(() -> new NotFoundException("Patient not found: " + patientId));
+    // -------------------------------------------------------------------------
+// PATIENT QR
+// -------------------------------------------------------------------------
+    private SessionResponse createPatientSession(
+            Long clinicId,
+            Long patientId,
+            String whatsappNumber,
+            Optional<ConversationSession> activeSession,
+            int sessionTtlMinutes) {
 
-            ConversationSession newSession = new ConversationSession();
-            newSession.setClinic(clinic);
-            newSession.setPatient(patient);
-            newSession.setWhatsappNumber(whatsappNumber);
-            newSession.setState(ConversationState.STARTED);
-            assignSessionCode(newSession, sessionTtlMinutes);
-            return toResponse(sessionRepository.save(newSession));
-        }
+        log.info("Patient session clinicId={} patientId={} whatsapp={}",
+                clinicId, patientId, whatsappNumber);
 
-        // -------------------------------------------------------------------------
-        // ONGOING (plain WhatsApp reply)
-        // -------------------------------------------------------------------------
+        assertDailySuccessLimitOrThrow(clinicId, whatsappNumber);
+        assertAttemptRateLimit(clinicId, whatsappNumber);
+
+        activeSession.ifPresent(this::abandonSession);
+
+        Clinic clinic = clinicRepository.findById(clinicId)
+                .orElseThrow(() -> new NotFoundException("Clinic not found: " + clinicId));
+        Patient patient = patientRepository.findById(patientId)
+                .orElseThrow(() -> new NotFoundException("Patient not found: " + patientId));
+
+        ConversationSession session = new ConversationSession();
+        session.setClinic(clinic);
+        session.setPatient(patient);
+        session.setWhatsappNumber(whatsappNumber);
+        session.setState(ConversationState.STARTED);
+        assignSessionCode(session, sessionTtlMinutes);
+
+        return toResponse(sessionRepository.save(session));
+    }
+
+    // -------------------------------------------------------------------------
+// ONGOING
+// -------------------------------------------------------------------------
+    private SessionResponse resumeOngoingSession(
+            String whatsappNumber,
+            Optional<ConversationSession> activeSession,
+            int sessionTtlMinutes) {
+
         ConversationSession existing = activeSession
                 .orElseThrow(() -> new NotFoundException(
                         "No active session found for number: " + whatsappNumber));
 
         if (isSessionExpired(existing, sessionTtlMinutes)) {
-            existing.setState(ConversationState.ABANDONED);
-            existing.setSessionCode(null);
-            existing.setCodeExpiresAt(null);
-            sessionRepository.save(existing);
-            throw new NotFoundException(
-                    "Session expired. Please scan the QR code again.");
+            log.info("Session expired for whatsapp={}", whatsappNumber);
+            abandonSession(existing);
+            throw new NotFoundException("Session expired. Please scan the QR code again.");
         }
 
         if (existing.getClinic() != null) {
-            assertDailySuccessLimitOrThrow(existing.getClinic().getId(), whatsappNumber);
+            Long clinicId = existing.getClinic().getId();
+            assertDailySuccessLimitOrThrow(clinicId, whatsappNumber);
+            assertAttemptRateLimit(clinicId, whatsappNumber);
         }
 
-        // Ensure code still present for later createAppointment
-        if (existing.getSessionCode() == null
-                || existing.getCodeExpiresAt() == null
-                || existing.getCodeExpiresAt().isBefore(Instant.now())) {
-            assignSessionCode(existing, sessionTtlMinutes);
-            sessionRepository.save(existing);
-        }
-
+        refreshSessionCodeIfNeeded(existing, sessionTtlMinutes);
         return toResponse(existing);
+    }
+
+    // -------------------------------------------------------------------------
+// Shared helpers
+// -------------------------------------------------------------------------
+    private void abandonSession(ConversationSession session) {
+        session.setState(ConversationState.ABANDONED);
+        session.setSessionCode(null);
+        session.setCodeExpiresAt(null);
+        sessionRepository.save(session);
+    }
+
+    private void refreshSessionCodeIfNeeded(ConversationSession session, int sessionTtlMinutes) {
+        if (session.getSessionCode() == null
+                || session.getCodeExpiresAt() == null
+                || session.getCodeExpiresAt().isBefore(Instant.now())) {
+            assignSessionCode(session, sessionTtlMinutes);
+            sessionRepository.save(session);
+        }
     }
 
     private void assignSessionCode(ConversationSession session, int ttlMinutes) {
@@ -343,5 +367,15 @@ public class ConversationSessionService {
                 s.getSessionCode(),
                 s.getCodeExpiresAt()
         );
+    }
+
+    private void assertAttemptRateLimit(Long clinicId, String whatsappNumber) {
+        Instant since = Instant.now().minus(10, ChronoUnit.MINUTES);
+        long attempts = bookingAttemptRepository
+                .countByWhatsappNumberAndClinicIdAndCreatedAtAfter(whatsappNumber, clinicId, since);
+        if (attempts > configProperties.booking().maxAttemptsPerPhonePer10Min()) { // 5
+            throw new NotFoundException(//TooManyRequestsException
+                    "Too many booking attempts. Please try again after a few("+configProperties.booking().maxAttemptsPerPhonePer10Min()+") minutes.");
+        }
     }
 }

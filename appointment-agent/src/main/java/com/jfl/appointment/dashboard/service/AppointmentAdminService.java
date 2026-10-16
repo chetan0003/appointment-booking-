@@ -23,7 +23,6 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.yaml.snakeyaml.util.EnumUtils;
 
 import java.math.BigDecimal;
 import java.time.*;
@@ -70,7 +69,19 @@ public class AppointmentAdminService {
             CreateAppointmentRequest request) {
 
         final boolean isWhatsApp = isWhatsAppRequest(request);
-        final Long clinicId2 = securityContextService.getClinicId();
+        Long resolvedClinicId = clinicId != null ? clinicId : request.clinicId();
+        if (resolvedClinicId == null) {
+            throw new NotFoundException("clinicId is required.");
+        }
+        // Dashboard only: enforce clinic access from logged-in user
+        Long clinicId2 = null;
+        if (!isWhatsApp) {
+               clinicId2 = securityContextService.getClinicId();
+            if (!Objects.equals(resolvedClinicId, clinicId2)) {
+                throw new SecurityException("User does not have access to clinic: " + resolvedClinicId);
+            }
+        }
+
 
         log.info(
                 "createAppointment source={}, clinicId={}, patientId={}, patientName={}, doctorId={}, date={} IdenpotentKey={}",
@@ -82,15 +93,6 @@ public class AppointmentAdminService {
                 request.appointmentDate(),
                 request.idempotencyKey()
         );
-
-        if (!Objects.equals(clinicId, clinicId2)) {
-            throw new SecurityException("User does not have access to clinic: " + clinicId);
-        }
-
-        Long resolvedClinicId = clinicId != null ? clinicId : request.clinicId();
-        if (resolvedClinicId == null) {
-            throw new IllegalArgumentException("clinicId is required.");
-        }
 
         // -------------------------------------------------------------------------
         // 0. Subscription
@@ -214,24 +216,24 @@ public class AppointmentAdminService {
         // 5.1 Appointment Policy Validation
         // -------------------------------------------------------------------------
 
-//        LocalDateTime appointmentDateTime =
-//                request.appointmentDate().atTime(request.startTime());
-//
-//        int existingAppointmentsToday =
-//                appointmentRepository.countPatientAppointmentsForDate(
-//                        patient.getId(),
-//                        clinic.getId(),
-//                        request.appointmentDate(),
-//                        List.of(
-//                                AppointmentStatus.CONFIRMED
-//                        )
-//                );
-//
-//        appointmentPolicyService.validateCreateBooking(
-//                resolvedClinicId,
-//                appointmentDateTime,
-//                existingAppointmentsToday
-//        );
+        LocalDateTime appointmentDateTime =
+                request.appointmentDate().atTime(request.startTime());
+
+        int existingAppointmentsToday =
+                appointmentRepository.countPatientAppointmentsForDate(
+                        patient.getId(),
+                        clinic.getId(),
+                        request.appointmentDate(),
+                        List.of(
+                                AppointmentStatus.CONFIRMED
+                        )
+                );
+
+        appointmentPolicyService.validateCreateBooking(
+                resolvedClinicId,
+                appointmentDateTime,
+                existingAppointmentsToday
+        );
 
         // -------------------------------------------------------------------------
         // 6. Create appointment
@@ -393,8 +395,8 @@ public class AppointmentAdminService {
         long attempts = bookingAttemptRepository
                 .countByWhatsappNumberAndClinicIdAndCreatedAtAfter(whatsappNumber, clinicId, since);
         if (attempts > configProperties.booking().maxAttemptsPerPhonePer10Min()) { // 5
-            throw new TooManyRequestsException(
-                    "Too many booking attempts. Please try again after a few minutes.");
+            throw new NotFoundException(//TooManyRequestsException
+                    "Too many booking attempts. Please try again after a few("+configProperties.booking().maxAttemptsPerPhonePer10Min()+") minutes.");
         }
     }
 
